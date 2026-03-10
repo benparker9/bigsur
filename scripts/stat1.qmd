@@ -1,0 +1,171 @@
+---
+title: "Impacts of Fire and Disease in Big Sur Forests"
+format: html
+editor: visual
+execute:
+  warning: false
+  message: false
+---
+### Introduction  
+In the late 1990’s, the invasive oomycete pathogen, Phytophthora ramorum, was introduced throughout the California Bay Area, resulting in an tree epidemic known as Sudden Oak Death (SOD). SOD has spread from southern Oregon to the southern Big Sur Coast, killing novel amounts of trees previously unseen by non-native forest pathogens (Cobb et al., 2020). In conjunction, dead trees have resulted in denser fuel structures, leading to synergistic impacts with both disease and fire combining to reshape native forests (Shaw et al., 2022). Through my project, I aim to understand the interactions between P. ramorum and fire and how they impact fire-related mortality in redwood, tanoak and bay laurel. Additionally, I analyze Wikipedia California fire history data to provide larger context on the impacts of wildfire. I have access to 20 years of ecological field data in Big Sur through the SOD project. This includes data on trees, plants, fuels and soil. This is my primary data for analysis, but to provide context on the greater impacts of wildfire, I will analyze a Wikipedia dataset on the deadliest fires in California history.   
+
+### Library Installation
+```{r}
+# will need special packages for tables, interactive maps
+packages <- c("kableExtra", "leaflet")
+for (pkg in packages) {
+  if (!require(pkg, character.only = TRUE, quietly = TRUE)) {
+    install.packages(pkg)
+    library(pkg, character.only = TRUE)
+  }
+}
+library(tidyr)
+library(dplyr)
+library(here)
+library(ggplot2)
+library(readr)
+library(kableExtra)
+# recycle functions
+read_me <- function(path){
+  read_csv(here("data","clean", path))
+}
+```
+
+### Question 1
+To begin, I seek to understand how epideomological and topographic fixed variables influence plot level biomass in the studied species by utilizing mixed effects models to distribute the inherent variation of time and space due to the repeated measures sampling protocol. Below is the equation used for modeling where random variables are in bold.
+$$
+\text{Live Biomass (kg)} = \textbf{SampleYear} + \textbf{Plot} + \text{CWD mass} + \text{Host CWD mass} + \text{Elevation} + \text{Slope} + \text{Fire} + \text{Disease}
+$$
+
+**Ho: There is no relationship between the explanatory variables and biomass.**  
+
+**H1: At least one of the explanatory variables has a statistically significant relationship with biomass.**
+
+```{r}
+q1 <-  read_me("q1-table.csv")
+q1_mod <- q1 |>
+  mutate(across(everything(), ~gsub("\\*\\*(.*?)\\*\\*", "<b>\\1</b>", .x)))
+q1_mod |>
+  kable(format="html", escape=FALSE) |>
+  kable_styling() 
+```
+
+**Results**  
+We can reject our null hypothesis and infer that for each of the species, one of the explanatory variables is significant in predicting biomass. My results affirm previous biological knowledge that Bay laurel has the competitive advantage in diseased forests (p < 0.001) and Redwood has significant biomass losses due to fire when CWD build ups are present.
+
+### Question 2
+In this question, I shift scales from the plot level to tree level and focus on how epideomological and topographic explanatory variables influence stem mortality in the studied species. I will utilize logistic regression models to predict mortality to better understand the driving forces of stem mortality.
+$$
+\text{Mortality} = \text{CWD mass} + \text{Host CWD mass} + \text{Elevation} + \text{Slope} + \text{Fire} + \text{Disease}
+$$
+
+**Ho: There is no relationship between the explanatory variables and mortality.**  
+
+**H1: At least one of the explanatory variables has a statistically significant relationship with mortality.**
+
+```{r}
+q2 <-  read_me("q2-table.csv")
+q2_mod <- q2 |>
+  mutate(across(everything(), ~gsub("\\*\\*(.*?)\\*\\*", "<b>\\1</b>", .x)))
+q2_mod |>
+  kable(format="html", escape=FALSE) |>
+  kable_styling() 
+```
+
+**Results**  
+We can reject our null hypothesis and we find statistically significant relationships between our explanatory variables and mortality. When analyzing tanoak and redwood, it's evident both fire and disease are the main drivers of mortality. Once again, these models affirm Bay laurel as a prolific asymptompatic host of SOD where disease presence decreases chance of mortality.    
+
+### Question 3
+Below, I utilize univariate summary statistics to better understand the impacts of fire on stem density and biomass. I aim to quantify the immediate impacts of fire only in plots that were measured five years before the fire and three years after. We see that fire results in prolific biomass loss across the species, however we see larger SD's across the species due to nature of the small dataset, so further analysis is needed to include plots measured after three years post fire.
+
+```{r}
+post_fire_tree <- read_me("q3-table.csv")
+kable(post_fire_tree)
+```
+
+
+### Question 4
+The scientific literature surrounding CWD changes due to fire is minimal due to the difficulty of obtaining data. However, I have a great dataset available and below I quantify some novel metrics about the Dolan Fire (2020) and Sobreanes Fire (2016). Once again, I summarize the immediate impacts of fire only in plots that were measured five years before the fire and three years after. 
+
+```{r}
+post_fire_cwd <- read_me("q4-table.csv")
+kable(post_fire_cwd)
+```
+
+### Question 5
+In addition to CWD summarizations, I have the ability to create novel CWD decay models given experimental data by my professor. In this analysis, I aim to understand the rates at which different species decay on the forest floor. The model formula was previously used to model leaf litter decay and I will use it for CWD analysis to quantify k or the decay rate. Below is the linearized exponential decay model formula I will use where t=time, Mt = CWD mass at t, Mo = initial CWD mass.
+
+$$
+\ln\left({M_t}/{M_0}\right) = -kt
+$$
+
+
+```{r}
+cwd_decay <- read_me("q5-plot.csv")
+cwd_decay |>
+  ggplot(aes(x=t,y=Y, color=Burn)) +
+  geom_point(shape=1, size=1.3) +
+  geom_line(aes(x=t,y=PredictedY), color="red", linetype="dashed") +
+  facet_wrap(~Species,scales = "free") + 
+  labs(title="Linearized Exponential Decomposition Models for Studied Big Sur Trees", x="Time (t)", y="", subtitle="ln(Proportion of Mass Change in Year t)",
+  color="Fire Status") +
+  theme_classic()
+```
+
+**Results**  
+The plot depicts the model results that for the three species, all models are significant and their rates differ between the species. Further tweaking of the model will need to occur, as well as deeper analysis of k values.
+
+### Question 6  
+For this analysis, I aim to understand the broader devistation of wildfires, particularly using fire characteristics to predict the amount of deaths that happened as a result of each fire. Additionally, I aim to affirm the fact that wildfires have become more devistating in [modern times](https://news.ucmerced.edu/news/2025/wildfire-disasters-surged-past-10-years-study-shows).
+
+```{r}
+wiki_fire <- read_me("q6-plot.csv")
+wiki_fire |>
+  ggplot(aes(x=Structures, y=Deaths)) +
+  geom_point(aes(size=Year), color="black", shape=1) +
+  geom_smooth(method="lm", color="red", se=FALSE, linetype="dashed") +
+  labs(title="Multiple Regression Model Predicting Total Deaths from California Wildfires")+
+  theme_classic()
+```
+
+**Results**  
+This plot highlights the two significant variables that predict wildfire deaths (structures burned, year). This affirms previous held assumptions that wildfire severity has increased in modern times, however further analysis including other data sources would need to be considered. 
+
+### Question 7
+Finally, I seek to understand the sampling bias throughout the inventory. I simulate a random poisson distribution and compare z-scores between our dataset and the simulated dataset.   
+
+```{r}
+map <- read_me("q7-map.csv")
+leaflet(map) %>%
+  addTiles() %>%
+  addProviderTiles(providers$Esri.WorldImagery) %>%
+  setView(lng = mean(map$Lon), lat = mean(map$Lat), zoom = 9) %>%
+  addCircleMarkers(
+    lng = ~Lon,
+    lat = ~Lat,
+    radius = ~Radius * 1.2,  # scale up for visibility
+    label = ~Plot,
+    popup = ~paste0(
+      "<b>Plot:</b> ", Plot, "<br>",
+      "<b>Times Inventoried:</b> ", TotalTimesInventoried, "<br>",
+      "<b>Visit Frequency:</b> ", VisitFrequency
+    ),
+    color = ~Color,
+    fillOpacity = 0.7
+  ) |>
+  addControl(
+    html = "<b style='font-size:12px;'>Bias in Sampling Frequency <br> - Larger circles indicate more frequent sampling. <br> - Green circles are plots that should be resampled, red circles are plots that have been oversampled.</b>",
+    position = "topright"
+  )
+```
+
+
+
+**Results**  
+The map suggests that there are regions that have been understudied, particularly in the very south of the plot network. By comparing summary statistics of z-scores between a simulated dataset and our dataset, we show that the distribution of sampling for the inventory is not perfectly Poisson and there has been frequency bias throughout the study. To adjust for this difference, PI's on the grant should prioritize the sampling of understudied plots (green circles).  
+
+## Conclusion   
+Through this project, I was able to affirm previously held biological knowledge in my Big Sur dataset. I was able to validate the negative impacts of fire on trees and quantify biomass loss in both the tree and CWD carbon pool. In addition, I created novel work flows that can be built upon for a publishable thesis. There are many upgrades I will make to the models but would love any feedback on whether or not I've build a strong argument and have data-backed results.  
+
+
+
