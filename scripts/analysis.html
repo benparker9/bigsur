@@ -99,1984 +99,848 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </header>
 
 
+<section id="project-hub" class="level2">
+<h2 class="anchored" data-anchor-id="project-hub"><a href="../index.html">Project Hub</a></h2>
+</section>
 <section id="table-of-contents" class="level2">
 <h2 class="anchored" data-anchor-id="table-of-contents">Table of Contents:</h2>
+<ul>
+<li><a href="#univariate-statistics-of-fire-and-disease-impacts">Univariate statistics of fire and disease impacts</a><br>
+</li>
+<li><a href="#underlying-drivers-of-biomass-and-stem-density-changes">Underlying drivers of biomass and stem density changes</a></li>
+<li><a href="#tracking-stems-through-time">Tracking stems through time</a></li>
+</ul>
+</section>
+<section id="objectives-quantifying-firedisease-impacts" class="level2">
+<h2 class="anchored" data-anchor-id="objectives-quantifying-firedisease-impacts">Objectives: quantifying fire/disease impacts</h2>
+<ul>
+<li>Quantify biomass, stem density changes pre to post fire. Compare across burn scar, species, and status.
+<ul>
+<li>Used mixed effects models to understand underlying relationships.<br>
+</li>
+</ul></li>
+<li>Track stems through time to quantify rates of mortality, snag fall and CWD decomposition.
+<ul>
+<li>Use survival analysis (mortality), ?? (snag fall), regression (CWD decomp.)</li>
+</ul></li>
+</ul>
+<section id="needed-libraries" class="level3">
+<h3 class="anchored" data-anchor-id="needed-libraries">Needed libraries</h3>
 <div class="cell">
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb1"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(tidyverse)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<div class="cell-output cell-output-stderr">
-<pre><code>── Attaching core tidyverse packages ──────────────────────── tidyverse 2.0.0 ──
-✔ dplyr     1.2.0     ✔ readr     2.1.6
-✔ forcats   1.0.1     ✔ stringr   1.6.0
-✔ ggplot2   4.0.1     ✔ tibble    3.3.1
-✔ lubridate 1.9.4     ✔ tidyr     1.3.2
-✔ purrr     1.2.1     
-── Conflicts ────────────────────────────────────────── tidyverse_conflicts() ──
-✖ dplyr::filter() masks stats::filter()
-✖ dplyr::lag()    masks stats::lag()
-ℹ Use the conflicted package (&lt;http://conflicted.r-lib.org/&gt;) to force all conflicts to become errors</code></pre>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb1"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(tidyverse)</span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(broom)</span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(gtsummary)</span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(survival)</span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(ggsurvfit)</span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(lme4) </span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(lmerTest)</span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(here)</span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(knitr)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </div>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb3"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(here)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<div class="cell-output cell-output-stderr">
-<pre><code>here() starts at /home/benpa/scripts/cp/bigsur</code></pre>
+</section>
+<section id="recycled-functions" class="level3">
+<h3 class="anchored" data-anchor-id="recycled-functions">Recycled functions</h3>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb2"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>read_me <span class="ot">&lt;-</span> <span class="cf">function</span>(path){</span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">read_csv</span>(<span class="fu">here</span>(<span class="st">"data"</span>, path))</span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>export_image <span class="ot">&lt;-</span> <span class="cf">function</span>(img, path){</span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>  <span class="fu">ggsave</span>(<span class="at">filename =</span> <span class="fu">here</span>(<span class="st">"exports"</span>, path), <span class="at">plot=</span>img, <span class="at">width=</span><span class="dv">12</span>, <span class="at">height=</span><span class="dv">8</span>)</span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a>grey_theme <span class="ot">&lt;-</span> <span class="cf">function</span>() {</span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme</span>(</span>
+<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a>  <span class="at">plot.title =</span> <span class="fu">element_text</span>(</span>
+<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a>      <span class="at">size =</span> <span class="dv">16</span>,</span>
+<span id="cb2-12"><a href="#cb2-12" aria-hidden="true" tabindex="-1"></a>      <span class="at">family =</span> <span class="st">"Times New Roman"</span>,</span>
+<span id="cb2-13"><a href="#cb2-13" aria-hidden="true" tabindex="-1"></a>      <span class="at">face =</span> <span class="st">"italic"</span>,</span>
+<span id="cb2-14"><a href="#cb2-14" aria-hidden="true" tabindex="-1"></a>      <span class="at">color =</span> <span class="st">"black"</span>, </span>
+<span id="cb2-15"><a href="#cb2-15" aria-hidden="true" tabindex="-1"></a>      <span class="at">margin =</span> <span class="fu">margin</span>(<span class="at">b =</span> <span class="dv">15</span>)</span>
+<span id="cb2-16"><a href="#cb2-16" aria-hidden="true" tabindex="-1"></a>    ),</span>
+<span id="cb2-17"><a href="#cb2-17" aria-hidden="true" tabindex="-1"></a>    <span class="co"># add border 1)</span></span>
+<span id="cb2-18"><a href="#cb2-18" aria-hidden="true" tabindex="-1"></a>    <span class="at">panel.border =</span> <span class="fu">element_rect</span>(<span class="at">colour =</span> <span class="st">"black"</span>, <span class="at">fill =</span> <span class="cn">NA</span>, <span class="at">linetype =</span> <span class="dv">2</span>),</span>
+<span id="cb2-19"><a href="#cb2-19" aria-hidden="true" tabindex="-1"></a>    <span class="co"># color background 2)</span></span>
+<span id="cb2-20"><a href="#cb2-20" aria-hidden="true" tabindex="-1"></a>    <span class="at">panel.background =</span> <span class="fu">element_rect</span>(<span class="at">fill =</span> <span class="st">"white"</span>),</span>
+<span id="cb2-21"><a href="#cb2-21" aria-hidden="true" tabindex="-1"></a>    <span class="co"># modify grid 3)</span></span>
+<span id="cb2-22"><a href="#cb2-22" aria-hidden="true" tabindex="-1"></a>    <span class="at">panel.grid.major.x =</span> <span class="fu">element_line</span>(<span class="at">colour =</span> <span class="st">"grey"</span>, <span class="at">linetype =</span> <span class="dv">3</span>, <span class="at">linewidth =</span> <span class="fl">0.5</span>),</span>
+<span id="cb2-23"><a href="#cb2-23" aria-hidden="true" tabindex="-1"></a>    <span class="at">panel.grid.minor.x =</span> <span class="fu">element_blank</span>(),</span>
+<span id="cb2-24"><a href="#cb2-24" aria-hidden="true" tabindex="-1"></a>    <span class="at">panel.grid.major.y =</span>  <span class="fu">element_line</span>(<span class="at">colour =</span> <span class="st">"grey"</span>, <span class="at">linetype =</span> <span class="dv">3</span>, <span class="at">linewidth =</span> <span class="fl">0.5</span>),</span>
+<span id="cb2-25"><a href="#cb2-25" aria-hidden="true" tabindex="-1"></a>    <span class="at">panel.grid.minor.y =</span> <span class="fu">element_blank</span>(),</span>
+<span id="cb2-26"><a href="#cb2-26" aria-hidden="true" tabindex="-1"></a>    <span class="co"># modify text, axis and colour 4) and 5)</span></span>
+<span id="cb2-27"><a href="#cb2-27" aria-hidden="true" tabindex="-1"></a>    <span class="at">axis.text =</span> <span class="fu">element_text</span>(<span class="at">colour =</span> <span class="st">"black"</span>, <span class="at">face =</span> <span class="st">"italic"</span>, <span class="at">family =</span> <span class="st">"Times New Roman"</span>),</span>
+<span id="cb2-28"><a href="#cb2-28" aria-hidden="true" tabindex="-1"></a>    <span class="at">axis.title =</span> <span class="fu">element_text</span>(<span class="at">colour =</span> <span class="st">"black"</span>, <span class="at">family =</span> <span class="st">"Times New Roman"</span>),</span>
+<span id="cb2-29"><a href="#cb2-29" aria-hidden="true" tabindex="-1"></a>    <span class="at">axis.ticks =</span> <span class="fu">element_line</span>(<span class="at">colour =</span> <span class="st">"black"</span>),</span>
+<span id="cb2-30"><a href="#cb2-30" aria-hidden="true" tabindex="-1"></a>    <span class="co"># legend at the bottom 6)</span></span>
+<span id="cb2-31"><a href="#cb2-31" aria-hidden="true" tabindex="-1"></a>    <span class="at">legend.position =</span> <span class="st">"bottom"</span></span>
+<span id="cb2-32"><a href="#cb2-32" aria-hidden="true" tabindex="-1"></a>  )</span>
+<span id="cb2-33"><a href="#cb2-33" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </div>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb5"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(broom)</span>
-<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(gtsummary)</span>
-<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(survival)</span>
-<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(ggsurvfit)</span>
-<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a>read_me <span class="ot">&lt;-</span> <span class="cf">function</span>(path){</span>
-<span id="cb5-8"><a href="#cb5-8" aria-hidden="true" tabindex="-1"></a>  <span class="fu">read_csv</span>(<span class="fu">here</span>(<span class="st">"data"</span>, path))</span>
-<span id="cb5-9"><a href="#cb5-9" aria-hidden="true" tabindex="-1"></a>}</span>
-<span id="cb5-10"><a href="#cb5-10" aria-hidden="true" tabindex="-1"></a>export_image <span class="ot">&lt;-</span> <span class="cf">function</span>(img, path){</span>
-<span id="cb5-11"><a href="#cb5-11" aria-hidden="true" tabindex="-1"></a>  <span class="fu">ggsave</span>(<span class="at">filename =</span> <span class="fu">here</span>(<span class="st">"exports"</span>, path), <span class="at">plot=</span>img, <span class="at">width=</span><span class="dv">12</span>, <span class="at">height=</span><span class="dv">8</span>)</span>
-<span id="cb5-12"><a href="#cb5-12" aria-hidden="true" tabindex="-1"></a>}</span>
-<span id="cb5-13"><a href="#cb5-13" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb5-14"><a href="#cb5-14" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb5-15"><a href="#cb5-15" aria-hidden="true" tabindex="-1"></a>grey_theme <span class="ot">&lt;-</span> <span class="cf">function</span>() {</span>
-<span id="cb5-16"><a href="#cb5-16" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme</span>(</span>
-<span id="cb5-17"><a href="#cb5-17" aria-hidden="true" tabindex="-1"></a>  <span class="at">plot.title =</span> <span class="fu">element_text</span>(</span>
-<span id="cb5-18"><a href="#cb5-18" aria-hidden="true" tabindex="-1"></a>      <span class="at">size =</span> <span class="dv">16</span>,</span>
-<span id="cb5-19"><a href="#cb5-19" aria-hidden="true" tabindex="-1"></a>      <span class="at">family =</span> <span class="st">"Times New Roman"</span>,</span>
-<span id="cb5-20"><a href="#cb5-20" aria-hidden="true" tabindex="-1"></a>      <span class="at">face =</span> <span class="st">"italic"</span>,</span>
-<span id="cb5-21"><a href="#cb5-21" aria-hidden="true" tabindex="-1"></a>      <span class="at">color =</span> <span class="st">"black"</span>, </span>
-<span id="cb5-22"><a href="#cb5-22" aria-hidden="true" tabindex="-1"></a>      <span class="at">margin =</span> <span class="fu">margin</span>(<span class="at">b =</span> <span class="dv">15</span>)</span>
-<span id="cb5-23"><a href="#cb5-23" aria-hidden="true" tabindex="-1"></a>    ),</span>
-<span id="cb5-24"><a href="#cb5-24" aria-hidden="true" tabindex="-1"></a>    <span class="co"># add border 1)</span></span>
-<span id="cb5-25"><a href="#cb5-25" aria-hidden="true" tabindex="-1"></a>    <span class="at">panel.border =</span> <span class="fu">element_rect</span>(<span class="at">colour =</span> <span class="st">"black"</span>, <span class="at">fill =</span> <span class="cn">NA</span>, <span class="at">linetype =</span> <span class="dv">2</span>),</span>
-<span id="cb5-26"><a href="#cb5-26" aria-hidden="true" tabindex="-1"></a>    <span class="co"># color background 2)</span></span>
-<span id="cb5-27"><a href="#cb5-27" aria-hidden="true" tabindex="-1"></a>    <span class="at">panel.background =</span> <span class="fu">element_rect</span>(<span class="at">fill =</span> <span class="st">"white"</span>),</span>
-<span id="cb5-28"><a href="#cb5-28" aria-hidden="true" tabindex="-1"></a>    <span class="co"># modify grid 3)</span></span>
-<span id="cb5-29"><a href="#cb5-29" aria-hidden="true" tabindex="-1"></a>    <span class="at">panel.grid.major.x =</span> <span class="fu">element_line</span>(<span class="at">colour =</span> <span class="st">"grey"</span>, <span class="at">linetype =</span> <span class="dv">3</span>, <span class="at">linewidth =</span> <span class="fl">0.5</span>),</span>
-<span id="cb5-30"><a href="#cb5-30" aria-hidden="true" tabindex="-1"></a>    <span class="at">panel.grid.minor.x =</span> <span class="fu">element_blank</span>(),</span>
-<span id="cb5-31"><a href="#cb5-31" aria-hidden="true" tabindex="-1"></a>    <span class="at">panel.grid.major.y =</span>  <span class="fu">element_line</span>(<span class="at">colour =</span> <span class="st">"grey"</span>, <span class="at">linetype =</span> <span class="dv">3</span>, <span class="at">linewidth =</span> <span class="fl">0.5</span>),</span>
-<span id="cb5-32"><a href="#cb5-32" aria-hidden="true" tabindex="-1"></a>    <span class="at">panel.grid.minor.y =</span> <span class="fu">element_blank</span>(),</span>
-<span id="cb5-33"><a href="#cb5-33" aria-hidden="true" tabindex="-1"></a>    <span class="co"># modify text, axis and colour 4) and 5)</span></span>
-<span id="cb5-34"><a href="#cb5-34" aria-hidden="true" tabindex="-1"></a>    <span class="at">axis.text =</span> <span class="fu">element_text</span>(<span class="at">colour =</span> <span class="st">"black"</span>, <span class="at">face =</span> <span class="st">"italic"</span>, <span class="at">family =</span> <span class="st">"Times New Roman"</span>),</span>
-<span id="cb5-35"><a href="#cb5-35" aria-hidden="true" tabindex="-1"></a>    <span class="at">axis.title =</span> <span class="fu">element_text</span>(<span class="at">colour =</span> <span class="st">"black"</span>, <span class="at">family =</span> <span class="st">"Times New Roman"</span>),</span>
-<span id="cb5-36"><a href="#cb5-36" aria-hidden="true" tabindex="-1"></a>    <span class="at">axis.ticks =</span> <span class="fu">element_line</span>(<span class="at">colour =</span> <span class="st">"black"</span>),</span>
-<span id="cb5-37"><a href="#cb5-37" aria-hidden="true" tabindex="-1"></a>    <span class="co"># legend at the bottom 6)</span></span>
-<span id="cb5-38"><a href="#cb5-38" aria-hidden="true" tabindex="-1"></a>    <span class="at">legend.position =</span> <span class="st">"bottom"</span></span>
-<span id="cb5-39"><a href="#cb5-39" aria-hidden="true" tabindex="-1"></a>  )</span>
-<span id="cb5-40"><a href="#cb5-40" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+</section>
+<section id="univariate-statistics-of-fire-and-disease-impacts" class="level2">
+<h2 class="anchored" data-anchor-id="univariate-statistics-of-fire-and-disease-impacts">Univariate statistics of fire and disease impacts</h2>
+<section id="living-biomass-changes" class="level3">
+<h3 class="anchored" data-anchor-id="living-biomass-changes">Living Biomass changes</h3>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb3"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>biomass_changes <span class="ot">&lt;-</span> <span class="fu">read_me</span>(<span class="st">"./clean/post_fire_summary.csv"</span>)</span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>burn_change <span class="ot">&lt;-</span> <span class="cf">function</span>(burn, time1) {</span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>  df <span class="ot">&lt;-</span> biomass_changes <span class="sc">|&gt;</span></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>    <span class="fu">filter</span>(BurnScar <span class="sc">==</span> burn) <span class="sc">|&gt;</span></span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a>    <span class="fu">select</span>(<span class="sc">!</span><span class="fu">c</span>(Elevation,Slope,Fire)) <span class="sc">|&gt;</span></span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a>    <span class="fu">mutate</span>(<span class="at">Pre =</span> <span class="fu">case_when</span>(</span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a>      SampleYear <span class="sc">&lt;</span> time1 <span class="sc">&amp;</span> SampleYear <span class="sc">&gt;</span> time1<span class="dv">-5</span> <span class="sc">~</span> <span class="st">"Pre"</span>,</span>
+<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a>      SampleYear <span class="sc">&gt;=</span> time1 <span class="sc">&amp;</span> SampleYear <span class="sc">&lt;=</span> time1<span class="sc">+</span> <span class="dv">3</span> <span class="sc">~</span> <span class="st">"Post"</span>,</span>
+<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a>      <span class="cn">TRUE</span> <span class="sc">~</span> <span class="st">"NA"</span>)) </span>
+<span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a>  df_mod1 <span class="ot">&lt;-</span> df <span class="sc">|&gt;</span></span>
+<span id="cb3-11"><a href="#cb3-11" aria-hidden="true" tabindex="-1"></a>    <span class="fu">filter</span>(Pre <span class="sc">%in%</span> <span class="fu">c</span>(<span class="st">"Pre"</span>,<span class="st">"Post"</span>)) <span class="sc">|&gt;</span></span>
+<span id="cb3-12"><a href="#cb3-12" aria-hidden="true" tabindex="-1"></a>    <span class="fu">group_by</span>(Plot, Species, BurnScar, PRam, Pre) <span class="sc">|&gt;</span></span>
+<span id="cb3-13"><a href="#cb3-13" aria-hidden="true" tabindex="-1"></a>    <span class="fu">summarise</span>(</span>
+<span id="cb3-14"><a href="#cb3-14" aria-hidden="true" tabindex="-1"></a>      <span class="at">TotalStem   =</span> <span class="fu">sum</span>(TotalStem, <span class="at">na.rm =</span> <span class="cn">TRUE</span>),</span>
+<span id="cb3-15"><a href="#cb3-15" aria-hidden="true" tabindex="-1"></a>      <span class="at">LiveBiomass =</span> <span class="fu">sum</span>(LiveBiomass, <span class="at">na.rm =</span> <span class="cn">TRUE</span>),</span>
+<span id="cb3-16"><a href="#cb3-16" aria-hidden="true" tabindex="-1"></a>      <span class="at">.groups =</span> <span class="st">"drop"</span></span>
+<span id="cb3-17"><a href="#cb3-17" aria-hidden="true" tabindex="-1"></a>    ) <span class="sc">|&gt;</span></span>
+<span id="cb3-18"><a href="#cb3-18" aria-hidden="true" tabindex="-1"></a>    <span class="fu">pivot_wider</span>(<span class="at">names_from=</span><span class="st">"Pre"</span>, <span class="at">values_from=</span><span class="fu">c</span>(<span class="st">"TotalStem"</span>,<span class="st">"LiveBiomass"</span>))</span>
+<span id="cb3-19"><a href="#cb3-19" aria-hidden="true" tabindex="-1"></a>  <span class="co"># only want to evaluate data with both pre and post </span></span>
+<span id="cb3-20"><a href="#cb3-20" aria-hidden="true" tabindex="-1"></a>  df_mod2 <span class="ot">&lt;-</span> <span class="fu">na.omit</span>(df_mod1)</span>
+<span id="cb3-21"><a href="#cb3-21" aria-hidden="true" tabindex="-1"></a>  df_mod3 <span class="ot">&lt;-</span> df_mod2 <span class="sc">|&gt;</span></span>
+<span id="cb3-22"><a href="#cb3-22" aria-hidden="true" tabindex="-1"></a>    <span class="fu">mutate</span>(<span class="at">ChangeStem =</span> TotalStem_Post <span class="sc">-</span> TotalStem_Pre,</span>
+<span id="cb3-23"><a href="#cb3-23" aria-hidden="true" tabindex="-1"></a>      <span class="at">ChangeBiomass =</span> LiveBiomass_Post <span class="sc">-</span> LiveBiomass_Pre) <span class="sc">|&gt;</span></span>
+<span id="cb3-24"><a href="#cb3-24" aria-hidden="true" tabindex="-1"></a>    <span class="fu">select</span>(<span class="fu">c</span>(<span class="dv">1</span>,<span class="dv">2</span>,<span class="dv">3</span>,<span class="dv">4</span>,<span class="dv">9</span>,<span class="dv">10</span>))</span>
+<span id="cb3-25"><a href="#cb3-25" aria-hidden="true" tabindex="-1"></a>  <span class="fu">return</span>(df_mod3)</span>
+<span id="cb3-26"><a href="#cb3-26" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb3-27"><a href="#cb3-27" aria-hidden="true" tabindex="-1"></a><span class="co"># apply summary function to dataset we want</span></span>
+<span id="cb3-28"><a href="#cb3-28" aria-hidden="true" tabindex="-1"></a>sites_tree <span class="ot">&lt;-</span> <span class="fu">tibble</span>(</span>
+<span id="cb3-29"><a href="#cb3-29" aria-hidden="true" tabindex="-1"></a>  <span class="at">burn  =</span> <span class="fu">c</span>(<span class="st">"dolan"</span>, <span class="st">"sober"</span>, <span class="st">"chalk"</span>, <span class="st">"control"</span> ),</span>
+<span id="cb3-30"><a href="#cb3-30" aria-hidden="true" tabindex="-1"></a>  <span class="at">time1 =</span> <span class="fu">c</span>(<span class="dv">2020</span>, <span class="dv">2016</span>, <span class="dv">2007</span>, <span class="dv">2007</span> )</span>
+<span id="cb3-31"><a href="#cb3-31" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb3-32"><a href="#cb3-32" aria-hidden="true" tabindex="-1"></a>demo_tree <span class="ot">&lt;-</span> <span class="fu">pmap_df</span>(sites_tree, burn_change)</span>
+<span id="cb3-33"><a href="#cb3-33" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-34"><a href="#cb3-34" aria-hidden="true" tabindex="-1"></a>post_fire_summary_biomass <span class="ot">&lt;-</span> demo_tree <span class="sc">|&gt;</span></span>
+<span id="cb3-35"><a href="#cb3-35" aria-hidden="true" tabindex="-1"></a>  <span class="fu">group_by</span>(Species, BurnScar) <span class="sc">|&gt;</span></span>
+<span id="cb3-36"><a href="#cb3-36" aria-hidden="true" tabindex="-1"></a>  <span class="fu">summarize</span>( <span class="at">n =</span> <span class="fu">n</span>(),</span>
+<span id="cb3-37"><a href="#cb3-37" aria-hidden="true" tabindex="-1"></a>            <span class="at">MeanStemChange =</span> <span class="fu">mean</span>(ChangeStem, <span class="at">na.rm=</span><span class="cn">TRUE</span>),</span>
+<span id="cb3-38"><a href="#cb3-38" aria-hidden="true" tabindex="-1"></a>            <span class="at">MeanBiomassChange =</span> <span class="fu">mean</span>(ChangeBiomass, <span class="at">na.rm=</span><span class="cn">TRUE</span>),</span>
+<span id="cb3-39"><a href="#cb3-39" aria-hidden="true" tabindex="-1"></a>            <span class="at">MedianStemChange    =</span> <span class="fu">median</span>(ChangeStem, <span class="at">na.rm =</span> <span class="cn">TRUE</span>),</span>
+<span id="cb3-40"><a href="#cb3-40" aria-hidden="true" tabindex="-1"></a>            <span class="at">MedianBiomassChange =</span> <span class="fu">median</span>(ChangeBiomass, <span class="at">na.rm =</span> <span class="cn">TRUE</span>),</span>
+<span id="cb3-41"><a href="#cb3-41" aria-hidden="true" tabindex="-1"></a>            <span class="at">SdStemChange =</span> <span class="fu">sd</span>(ChangeStem, <span class="at">na.rm=</span><span class="cn">TRUE</span>),</span>
+<span id="cb3-42"><a href="#cb3-42" aria-hidden="true" tabindex="-1"></a>            <span class="at">SdBiomassChange =</span> <span class="fu">sd</span>(ChangeBiomass, <span class="at">na.rm=</span><span class="cn">TRUE</span>)</span>
+<span id="cb3-43"><a href="#cb3-43" aria-hidden="true" tabindex="-1"></a>) <span class="sc">|&gt;</span></span>
+<span id="cb3-44"><a href="#cb3-44" aria-hidden="true" tabindex="-1"></a>  <span class="fu">rename</span>(</span>
+<span id="cb3-45"><a href="#cb3-45" aria-hidden="true" tabindex="-1"></a>         <span class="st">`</span><span class="at">Mean Change in Stem Density</span><span class="st">`</span> <span class="ot">=</span> <span class="dv">3</span>,</span>
+<span id="cb3-46"><a href="#cb3-46" aria-hidden="true" tabindex="-1"></a>     <span class="st">`</span><span class="at">Mean Change in Biomass</span><span class="st">`</span> <span class="ot">=</span> <span class="dv">4</span>,</span>
+<span id="cb3-47"><a href="#cb3-47" aria-hidden="true" tabindex="-1"></a>     <span class="st">`</span><span class="at">Median Change in Stem Density</span><span class="st">`</span> <span class="ot">=</span> <span class="dv">5</span>,</span>
+<span id="cb3-48"><a href="#cb3-48" aria-hidden="true" tabindex="-1"></a>     <span class="st">`</span><span class="at">Median Change in Biomass</span><span class="st">`</span> <span class="ot">=</span> <span class="dv">6</span>,</span>
+<span id="cb3-49"><a href="#cb3-49" aria-hidden="true" tabindex="-1"></a>  <span class="st">`</span><span class="at">SD Change in Stem Density</span><span class="st">`</span> <span class="ot">=</span> <span class="dv">7</span>,</span>
+<span id="cb3-50"><a href="#cb3-50" aria-hidden="true" tabindex="-1"></a>  <span class="st">`</span><span class="at">SD Change in Biomass</span><span class="st">`</span> <span class="ot">=</span> <span class="dv">8</span>)</span>
+<span id="cb3-51"><a href="#cb3-51" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-52"><a href="#cb3-52" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-53"><a href="#cb3-53" aria-hidden="true" tabindex="-1"></a><span class="fu">kable</span>(post_fire_summary_biomass)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output-display">
+<table class="caption-top table table-sm table-striped small">
+<colgroup>
+<col style="width: 4%">
+<col style="width: 4%">
+<col style="width: 15%">
+<col style="width: 12%">
+<col style="width: 16%">
+<col style="width: 13%">
+<col style="width: 13%">
+<col style="width: 11%">
+<col style="width: 8%">
+</colgroup>
+<thead>
+<tr class="header">
+<th style="text-align: left;">Species</th>
+<th style="text-align: left;">BurnScar</th>
+<th style="text-align: right;">Mean Change in Stem Density</th>
+<th style="text-align: right;">Mean Change in Biomass</th>
+<th style="text-align: right;">Median Change in Stem Density</th>
+<th style="text-align: right;">Median Change in Biomass</th>
+<th style="text-align: right;">SD Change in Stem Density</th>
+<th style="text-align: right;">SD Change in Biomass</th>
+<th style="text-align: right;">SdBiomassChange</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;">ARME</td>
+<td style="text-align: left;">control</td>
+<td style="text-align: right;">2</td>
+<td style="text-align: right;">46.000000</td>
+<td style="text-align: right;">902.8045</td>
+<td style="text-align: right;">46.0</td>
+<td style="text-align: right;">902.8045</td>
+<td style="text-align: right;">65.0538239</td>
+<td style="text-align: right;">739.7362</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">ARME</td>
+<td style="text-align: left;">dolan</td>
+<td style="text-align: right;">1</td>
+<td style="text-align: right;">-63.000000</td>
+<td style="text-align: right;">-3027.2720</td>
+<td style="text-align: right;">-63.0</td>
+<td style="text-align: right;">-3027.2720</td>
+<td style="text-align: right;">NA</td>
+<td style="text-align: right;">NA</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">ARME</td>
+<td style="text-align: left;">sober</td>
+<td style="text-align: right;">1</td>
+<td style="text-align: right;">7.000000</td>
+<td style="text-align: right;">-123246.6955</td>
+<td style="text-align: right;">7.0</td>
+<td style="text-align: right;">-123246.6955</td>
+<td style="text-align: right;">NA</td>
+<td style="text-align: right;">NA</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">LIDE</td>
+<td style="text-align: left;">chalk</td>
+<td style="text-align: right;">2</td>
+<td style="text-align: right;">-15.500000</td>
+<td style="text-align: right;">-59953.2096</td>
+<td style="text-align: right;">-15.5</td>
+<td style="text-align: right;">-59953.2096</td>
+<td style="text-align: right;">23.3345238</td>
+<td style="text-align: right;">64628.9060</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">LIDE</td>
+<td style="text-align: left;">control</td>
+<td style="text-align: right;">7</td>
+<td style="text-align: right;">-11.428571</td>
+<td style="text-align: right;">-39376.3353</td>
+<td style="text-align: right;">-1.0</td>
+<td style="text-align: right;">-186.6154</td>
+<td style="text-align: right;">25.1452921</td>
+<td style="text-align: right;">110599.7992</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">LIDE</td>
+<td style="text-align: left;">dolan</td>
+<td style="text-align: right;">1</td>
+<td style="text-align: right;">-102.000000</td>
+<td style="text-align: right;">-26804.3274</td>
+<td style="text-align: right;">-102.0</td>
+<td style="text-align: right;">-26804.3274</td>
+<td style="text-align: right;">NA</td>
+<td style="text-align: right;">NA</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">LIDE</td>
+<td style="text-align: left;">sober</td>
+<td style="text-align: right;">7</td>
+<td style="text-align: right;">-31.714286</td>
+<td style="text-align: right;">-72421.2930</td>
+<td style="text-align: right;">-30.0</td>
+<td style="text-align: right;">-1713.1601</td>
+<td style="text-align: right;">20.9659588</td>
+<td style="text-align: right;">179384.1459</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">QUAG</td>
+<td style="text-align: left;">chalk</td>
+<td style="text-align: right;">1</td>
+<td style="text-align: right;">-17.000000</td>
+<td style="text-align: right;">-248297.3024</td>
+<td style="text-align: right;">-17.0</td>
+<td style="text-align: right;">-248297.3024</td>
+<td style="text-align: right;">NA</td>
+<td style="text-align: right;">NA</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">QUAG</td>
+<td style="text-align: left;">control</td>
+<td style="text-align: right;">3</td>
+<td style="text-align: right;">-3.333333</td>
+<td style="text-align: right;">-48965.5711</td>
+<td style="text-align: right;">-3.0</td>
+<td style="text-align: right;">-50016.3334</td>
+<td style="text-align: right;">1.5275252</td>
+<td style="text-align: right;">47378.7436</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">QUAG</td>
+<td style="text-align: left;">dolan</td>
+<td style="text-align: right;">4</td>
+<td style="text-align: right;">-2.750000</td>
+<td style="text-align: right;">-26357.2068</td>
+<td style="text-align: right;">-2.5</td>
+<td style="text-align: right;">-28158.3407</td>
+<td style="text-align: right;">0.9574271</td>
+<td style="text-align: right;">22332.6143</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">QUAG</td>
+<td style="text-align: left;">sober</td>
+<td style="text-align: right;">1</td>
+<td style="text-align: right;">-1.000000</td>
+<td style="text-align: right;">-22534.8748</td>
+<td style="text-align: right;">-1.0</td>
+<td style="text-align: right;">-22534.8748</td>
+<td style="text-align: right;">NA</td>
+<td style="text-align: right;">NA</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">SESE</td>
+<td style="text-align: left;">chalk</td>
+<td style="text-align: right;">3</td>
+<td style="text-align: right;">13.333333</td>
+<td style="text-align: right;">-429923.7491</td>
+<td style="text-align: right;">15.0</td>
+<td style="text-align: right;">-527563.8472</td>
+<td style="text-align: right;">22.5462488</td>
+<td style="text-align: right;">389573.0767</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">SESE</td>
+<td style="text-align: left;">control</td>
+<td style="text-align: right;">6</td>
+<td style="text-align: right;">0.500000</td>
+<td style="text-align: right;">-90133.2138</td>
+<td style="text-align: right;">2.0</td>
+<td style="text-align: right;">-2288.8827</td>
+<td style="text-align: right;">11.2205169</td>
+<td style="text-align: right;">297444.0134</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">SESE</td>
+<td style="text-align: left;">dolan</td>
+<td style="text-align: right;">8</td>
+<td style="text-align: right;">-70.875000</td>
+<td style="text-align: right;">31088.0100</td>
+<td style="text-align: right;">-60.5</td>
+<td style="text-align: right;">-420.0842</td>
+<td style="text-align: right;">44.7770270</td>
+<td style="text-align: right;">139804.9677</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">SESE</td>
+<td style="text-align: left;">sober</td>
+<td style="text-align: right;">7</td>
+<td style="text-align: right;">24.857143</td>
+<td style="text-align: right;">-143248.2514</td>
+<td style="text-align: right;">29.0</td>
+<td style="text-align: right;">-45464.2839</td>
+<td style="text-align: right;">34.8780187</td>
+<td style="text-align: right;">221379.3432</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">UMCA</td>
+<td style="text-align: left;">chalk</td>
+<td style="text-align: right;">3</td>
+<td style="text-align: right;">-20.000000</td>
+<td style="text-align: right;">-100282.7510</td>
+<td style="text-align: right;">-38.0</td>
+<td style="text-align: right;">-130572.4163</td>
+<td style="text-align: right;">42.9301759</td>
+<td style="text-align: right;">88196.1498</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">UMCA</td>
+<td style="text-align: left;">control</td>
+<td style="text-align: right;">8</td>
+<td style="text-align: right;">-2.125000</td>
+<td style="text-align: right;">-615.0360</td>
+<td style="text-align: right;">-0.5</td>
+<td style="text-align: right;">264.4450</td>
+<td style="text-align: right;">14.3271720</td>
+<td style="text-align: right;">2438.0854</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">UMCA</td>
+<td style="text-align: left;">dolan</td>
+<td style="text-align: right;">5</td>
+<td style="text-align: right;">-33.800000</td>
+<td style="text-align: right;">-34933.3956</td>
+<td style="text-align: right;">-18.0</td>
+<td style="text-align: right;">-6603.0926</td>
+<td style="text-align: right;">44.7627077</td>
+<td style="text-align: right;">42222.7330</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">UMCA</td>
+<td style="text-align: left;">sober</td>
+<td style="text-align: right;">7</td>
+<td style="text-align: right;">67.857143</td>
+<td style="text-align: right;">-32948.9578</td>
+<td style="text-align: right;">15.0</td>
+<td style="text-align: right;">-23116.0977</td>
+<td style="text-align: right;">96.8356487</td>
+<td style="text-align: right;">38988.3425</td>
+</tr>
+</tbody>
+</table>
 </div>
+</div>
+</section>
+<section id="cwd-biomass-changes" class="level3">
+<h3 class="anchored" data-anchor-id="cwd-biomass-changes">CWD Biomass changes</h3>
+<p>– Influence of species,disease,fire on decomposition rate of CWD.<br>
+– Linearized exponential decay model iterated across the species.<br>
+– Aim to estimate values of k and compare between plot conditions.<br>
+<strong>Questions I hope to answer</strong><br>
+How do fire, disease and species impact decomposition rates?<br>
+Is there a linear relationship between change in mass and time?</p>
+<p>– This piggy backs off earlier research conducted by Dr.Cobb. I am utilizing a known equation for <a href="https://cdnsciencepub.com/doi/10.1139/x06-012">leaf litter decay</a>. Results are simple linear regression, just a lot of build up.<br>
+– Improvements: Split the dataset into burned/unburned, run individual models for each</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb4"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>cwd_fire <span class="ot">&lt;-</span> <span class="fu">read_me</span>(<span class="st">"./clean/cwd_mass_change_fire.csv"</span>)</span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>burn_cwd_change <span class="ot">&lt;-</span> <span class="cf">function</span>(burn, time1) {</span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>  df <span class="ot">&lt;-</span> cwd_fire <span class="sc">|&gt;</span></span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>    <span class="fu">filter</span>(BurnScar <span class="sc">==</span> burn) <span class="sc">|&gt;</span></span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a>    <span class="fu">mutate</span>(<span class="at">Time =</span> <span class="fu">case_when</span>(</span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>      SampleYear <span class="sc">&lt;</span> time1 <span class="sc">&amp;</span> SampleYear <span class="sc">&gt;</span> time1<span class="dv">-5</span> <span class="sc">~</span> <span class="st">"Pre"</span>,</span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a>      SampleYear <span class="sc">&gt;=</span> time1 <span class="sc">&amp;</span> SampleYear <span class="sc">&lt;=</span> time1<span class="sc">+</span> <span class="dv">3</span> <span class="sc">~</span> <span class="st">"Post"</span>,</span>
+<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a>      <span class="cn">TRUE</span> <span class="sc">~</span> <span class="st">"NA"</span>)) </span>
+<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a>  df_mod1 <span class="ot">&lt;-</span> df <span class="sc">|&gt;</span></span>
+<span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a>    <span class="fu">filter</span>(Time <span class="sc">%in%</span> <span class="fu">c</span>(<span class="st">"Pre"</span>,<span class="st">"Post"</span>)) <span class="sc">|&gt;</span></span>
+<span id="cb4-11"><a href="#cb4-11" aria-hidden="true" tabindex="-1"></a>    <span class="fu">group_by</span>(Plot, BurnScar, Time) <span class="sc">|&gt;</span></span>
+<span id="cb4-12"><a href="#cb4-12" aria-hidden="true" tabindex="-1"></a>    <span class="fu">summarise</span>(</span>
+<span id="cb4-13"><a href="#cb4-13" aria-hidden="true" tabindex="-1"></a>      <span class="at">Biomass =</span> <span class="fu">sum</span>(PlotCwdMass, <span class="at">na.rm =</span> <span class="cn">TRUE</span>)) <span class="sc">|&gt;</span></span>
+<span id="cb4-14"><a href="#cb4-14" aria-hidden="true" tabindex="-1"></a>    <span class="fu">pivot_wider</span>(<span class="at">names_from=</span><span class="st">"Time"</span>, <span class="at">values_from=</span><span class="st">"Biomass"</span>,<span class="at">names_expand =</span> <span class="cn">TRUE</span>)</span>
+<span id="cb4-15"><a href="#cb4-15" aria-hidden="true" tabindex="-1"></a>  df_mod2 <span class="ot">&lt;-</span> df_mod1 <span class="sc">|&gt;</span></span>
+<span id="cb4-16"><a href="#cb4-16" aria-hidden="true" tabindex="-1"></a>    <span class="fu">filter</span>(<span class="sc">!</span><span class="fu">is.na</span>(Pre) <span class="sc">&amp;</span> <span class="sc">!</span><span class="fu">is.na</span>(Post))</span>
+<span id="cb4-17"><a href="#cb4-17" aria-hidden="true" tabindex="-1"></a>  df_mod3 <span class="ot">&lt;-</span> df_mod2 <span class="sc">|&gt;</span></span>
+<span id="cb4-18"><a href="#cb4-18" aria-hidden="true" tabindex="-1"></a>    <span class="fu">mutate</span>(<span class="at">ChangeBiomass =</span> Post <span class="sc">-</span> Pre) </span>
+<span id="cb4-19"><a href="#cb4-19" aria-hidden="true" tabindex="-1"></a>  <span class="fu">return</span>(df_mod3)</span>
+<span id="cb4-20"><a href="#cb4-20" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb4-21"><a href="#cb4-21" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-22"><a href="#cb4-22" aria-hidden="true" tabindex="-1"></a>sites_cwd <span class="ot">&lt;-</span> <span class="fu">tibble</span>(</span>
+<span id="cb4-23"><a href="#cb4-23" aria-hidden="true" tabindex="-1"></a>  <span class="at">burn  =</span> <span class="fu">c</span>(<span class="st">"dolan"</span>, <span class="st">"sober"</span>,  <span class="st">"control"</span> ),</span>
+<span id="cb4-24"><a href="#cb4-24" aria-hidden="true" tabindex="-1"></a>  <span class="at">time1 =</span> <span class="fu">c</span>(<span class="dv">2020</span>, <span class="dv">2016</span>, <span class="dv">2013</span>  )</span>
+<span id="cb4-25"><a href="#cb4-25" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb4-26"><a href="#cb4-26" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-27"><a href="#cb4-27" aria-hidden="true" tabindex="-1"></a>cwd_demo <span class="ot">&lt;-</span> <span class="fu">pmap_df</span>(sites_cwd, burn_cwd_change)</span>
+<span id="cb4-28"><a href="#cb4-28" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-29"><a href="#cb4-29" aria-hidden="true" tabindex="-1"></a>post_fire_cwd_summary <span class="ot">&lt;-</span> cwd_demo <span class="sc">|&gt;</span></span>
+<span id="cb4-30"><a href="#cb4-30" aria-hidden="true" tabindex="-1"></a>  <span class="fu">group_by</span>(BurnScar) <span class="sc">|&gt;</span></span>
+<span id="cb4-31"><a href="#cb4-31" aria-hidden="true" tabindex="-1"></a>  <span class="fu">summarize</span>( <span class="at">n =</span> <span class="fu">n</span>(),</span>
+<span id="cb4-32"><a href="#cb4-32" aria-hidden="true" tabindex="-1"></a>            <span class="at">MeanBiomassChange =</span> <span class="fu">mean</span>(ChangeBiomass, <span class="at">na.rm=</span><span class="cn">TRUE</span>),</span>
+<span id="cb4-33"><a href="#cb4-33" aria-hidden="true" tabindex="-1"></a>            <span class="at">MedianBiomassChange =</span> <span class="fu">median</span>(ChangeBiomass, <span class="at">na.rm =</span> <span class="cn">TRUE</span>),</span>
+<span id="cb4-34"><a href="#cb4-34" aria-hidden="true" tabindex="-1"></a>            <span class="at">SdBiomassChange =</span> <span class="fu">sd</span>(ChangeBiomass, <span class="at">na.rm=</span><span class="cn">TRUE</span>),</span>
+<span id="cb4-35"><a href="#cb4-35" aria-hidden="true" tabindex="-1"></a>            <span class="at">MinBiomassChange =</span> <span class="fu">min</span>(ChangeBiomass, <span class="at">na.rm=</span><span class="cn">TRUE</span>),</span>
+<span id="cb4-36"><a href="#cb4-36" aria-hidden="true" tabindex="-1"></a>            <span class="at">MaxBiomassChange =</span> <span class="fu">max</span>(ChangeBiomass, <span class="at">na.rm=</span><span class="cn">TRUE</span>)</span>
+<span id="cb4-37"><a href="#cb4-37" aria-hidden="true" tabindex="-1"></a>) <span class="sc">|&gt;</span></span>
+<span id="cb4-38"><a href="#cb4-38" aria-hidden="true" tabindex="-1"></a>  <span class="fu">rename</span>(<span class="st">`</span><span class="at">Burn Scar</span><span class="st">`</span> <span class="ot">=</span> <span class="dv">1</span>,</span>
+<span id="cb4-39"><a href="#cb4-39" aria-hidden="true" tabindex="-1"></a>          <span class="st">`</span><span class="at">Mean Change in Cwd Biomass</span><span class="st">`</span> <span class="ot">=</span> <span class="dv">3</span>,</span>
+<span id="cb4-40"><a href="#cb4-40" aria-hidden="true" tabindex="-1"></a>     <span class="st">`</span><span class="at">Median Change in Cwd Biomass</span><span class="st">`</span> <span class="ot">=</span> <span class="dv">4</span>,</span>
+<span id="cb4-41"><a href="#cb4-41" aria-hidden="true" tabindex="-1"></a>      <span class="st">`</span><span class="at">SD Change in Cwd Biomass</span><span class="st">`</span> <span class="ot">=</span> <span class="dv">5</span>,</span>
+<span id="cb4-42"><a href="#cb4-42" aria-hidden="true" tabindex="-1"></a>     <span class="st">`</span><span class="at">Min Change in Cwd Biomass</span><span class="st">`</span> <span class="ot">=</span> <span class="dv">6</span>,</span>
+<span id="cb4-43"><a href="#cb4-43" aria-hidden="true" tabindex="-1"></a>     <span class="st">`</span><span class="at">Max Change in Cwd Biomass</span><span class="st">`</span> <span class="ot">=</span> <span class="dv">7</span>) <span class="sc">|&gt;</span></span>
+<span id="cb4-44"><a href="#cb4-44" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="st">`</span><span class="at">Burn Scar</span><span class="st">`</span> <span class="ot">=</span> <span class="fu">case_when</span>(<span class="st">`</span><span class="at">Burn Scar</span><span class="st">`</span> <span class="sc">==</span> <span class="st">"control"</span> <span class="sc">~</span> <span class="st">"Control"</span>,</span>
+<span id="cb4-45"><a href="#cb4-45" aria-hidden="true" tabindex="-1"></a>                                  <span class="st">`</span><span class="at">Burn Scar</span><span class="st">`</span> <span class="sc">==</span> <span class="st">"dolan"</span> <span class="sc">~</span> <span class="st">"Dolan Fire"</span>,</span>
+<span id="cb4-46"><a href="#cb4-46" aria-hidden="true" tabindex="-1"></a>                                  <span class="st">`</span><span class="at">Burn Scar</span><span class="st">`</span> <span class="sc">==</span> <span class="st">"sober"</span> <span class="sc">~</span> <span class="st">"Sobreanes Fire"</span>))</span>
+<span id="cb4-47"><a href="#cb4-47" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-48"><a href="#cb4-48" aria-hidden="true" tabindex="-1"></a><span class="fu">kable</span>(post_fire_cwd_summary)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output-display">
+<table class="caption-top table table-sm table-striped small">
+<colgroup>
+<col style="width: 9%">
+<col style="width: 1%">
+<col style="width: 17%">
+<col style="width: 19%">
+<col style="width: 16%">
+<col style="width: 17%">
+<col style="width: 17%">
+</colgroup>
+<thead>
+<tr class="header">
+<th style="text-align: left;">Burn Scar</th>
+<th style="text-align: right;">n</th>
+<th style="text-align: right;">Mean Change in Cwd Biomass</th>
+<th style="text-align: right;">Median Change in Cwd Biomass</th>
+<th style="text-align: right;">SD Change in Cwd Biomass</th>
+<th style="text-align: right;">Min Change in Cwd Biomass</th>
+<th style="text-align: right;">Max Change in Cwd Biomass</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;">Control</td>
+<td style="text-align: right;">17</td>
+<td style="text-align: right;">-0.9676349</td>
+<td style="text-align: right;">0.00000</td>
+<td style="text-align: right;">5.172682</td>
+<td style="text-align: right;">-12.17220</td>
+<td style="text-align: right;">6.193899</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">Dolan Fire</td>
+<td style="text-align: right;">9</td>
+<td style="text-align: right;">-30.9799372</td>
+<td style="text-align: right;">-27.73283</td>
+<td style="text-align: right;">25.644291</td>
+<td style="text-align: right;">-81.38109</td>
+<td style="text-align: right;">9.029248</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">Sobreanes Fire</td>
+<td style="text-align: right;">7</td>
+<td style="text-align: right;">-91.0268759</td>
+<td style="text-align: right;">-48.78311</td>
+<td style="text-align: right;">195.065187</td>
+<td style="text-align: right;">-480.46729</td>
+<td style="text-align: right;">94.885095</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</section>
+</section>
+<section id="underlying-drivers-of-biomass-and-stem-density-changes" class="level2">
+<h2 class="anchored" data-anchor-id="underlying-drivers-of-biomass-and-stem-density-changes">Underlying drivers of biomass and stem density changes</h2>
+<section id="mixed-effects-models" class="level3">
+<h3 class="anchored" data-anchor-id="mixed-effects-models">Mixed effects models</h3>
+<p>– Multiple regression with mixed effects models iterated across species<br>
+- Attempt to understand drivers of biomass changes. Is disease and fire interacting to reduce biomass? Is it even across species.<br>
+- Improvements: Run multiple models per species with different explanatory variables, take weighted AIC and weighted effects.<br>
+<strong>Questions I hope to answer</strong><br>
+Which features, topographic or epidemiological, are driving biomass changes in Redwood forests?<br>
+Is there a linear relationship between the fixed explanatory variables and biomass?</p>
+<p>– P-values for fixed variables below the 0.05 threshold will allow us to reject our null hypothesis and indicate a linear relationship between a fixed explanatory variable and biomass.</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb5"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>biomass <span class="ot">&lt;-</span>  <span class="fu">read_me</span>(<span class="st">"./clean/livebiomass_mixedmodel.csv"</span>)</span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>species_df <span class="ot">&lt;-</span> <span class="fu">unique</span>(biomass<span class="sc">$</span>Species)</span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>biomass_model <span class="ot">&lt;-</span> <span class="cf">function</span>(species){</span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a>  df1 <span class="ot">&lt;-</span> biomass <span class="sc">|&gt;</span></span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a>    <span class="fu">filter</span>(Species <span class="sc">==</span> {{species}})</span>
+<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a>  mixed_model <span class="ot">&lt;-</span> <span class="fu">lmer</span>(LiveBiomass <span class="sc">~</span> PlotCwdMass <span class="sc">+</span> HostCwdMass <span class="sc">+</span> Elevation <span class="sc">+</span> Slope <span class="sc">+</span> Fire <span class="sc">+</span> PRam <span class="sc">+</span></span>
+<span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a>                    (<span class="dv">1</span><span class="sc">|</span>SampleYear) <span class="sc">+</span> (<span class="dv">1</span><span class="sc">|</span>Plot),</span>
+<span id="cb5-8"><a href="#cb5-8" aria-hidden="true" tabindex="-1"></a>                    <span class="at">data=</span>df1</span>
+<span id="cb5-9"><a href="#cb5-9" aria-hidden="true" tabindex="-1"></a>                     )</span>
+<span id="cb5-10"><a href="#cb5-10" aria-hidden="true" tabindex="-1"></a>  summary <span class="ot">&lt;-</span> <span class="fu">summary</span>(mixed_model)</span>
+<span id="cb5-11"><a href="#cb5-11" aria-hidden="true" tabindex="-1"></a>  </span>
+<span id="cb5-12"><a href="#cb5-12" aria-hidden="true" tabindex="-1"></a>  df_summary <span class="ot">&lt;-</span> <span class="fu">as.data.frame</span>(summary<span class="sc">$</span>coefficients) <span class="sc">|&gt;</span></span>
+<span id="cb5-13"><a href="#cb5-13" aria-hidden="true" tabindex="-1"></a>     <span class="fu">mutate</span>(<span class="at">Species =</span> species)</span>
+<span id="cb5-14"><a href="#cb5-14" aria-hidden="true" tabindex="-1"></a>  df_summary<span class="sc">$</span>Term <span class="ot">=</span> <span class="fu">rownames</span>(df_summary)</span>
+<span id="cb5-15"><a href="#cb5-15" aria-hidden="true" tabindex="-1"></a>  <span class="fu">return</span>(df_summary)</span>
+<span id="cb5-16"><a href="#cb5-16" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb5-17"><a href="#cb5-17" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-18"><a href="#cb5-18" aria-hidden="true" tabindex="-1"></a>species_models <span class="ot">&lt;-</span> <span class="fu">map_df</span>(species_df, biomass_model)</span>
+<span id="cb5-19"><a href="#cb5-19" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-20"><a href="#cb5-20" aria-hidden="true" tabindex="-1"></a>species_models2 <span class="ot">&lt;-</span> species_models <span class="sc">|&gt;</span></span>
+<span id="cb5-21"><a href="#cb5-21" aria-hidden="true" tabindex="-1"></a>  <span class="fu">rename</span>(<span class="at">p =</span> <span class="dv">5</span>) <span class="sc">|&gt;</span></span>
+<span id="cb5-22"><a href="#cb5-22" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">Results =</span> <span class="fu">ifelse</span>(</span>
+<span id="cb5-23"><a href="#cb5-23" aria-hidden="true" tabindex="-1"></a>    p <span class="sc">&lt;</span> <span class="fl">0.05</span>,</span>
+<span id="cb5-24"><a href="#cb5-24" aria-hidden="true" tabindex="-1"></a>    <span class="fu">paste0</span>(<span class="st">"**"</span>, <span class="fu">round</span>(Estimate, <span class="dv">3</span>), <span class="st">" ("</span>, <span class="fu">formatC</span>(p, <span class="at">format =</span> <span class="st">"e"</span>, <span class="at">digits =</span> <span class="dv">2</span>), <span class="st">")**"</span>),</span>
+<span id="cb5-25"><a href="#cb5-25" aria-hidden="true" tabindex="-1"></a>    <span class="fu">paste0</span>(<span class="fu">round</span>(Estimate, <span class="dv">3</span>), <span class="st">" ("</span>, <span class="fu">formatC</span>(p, <span class="at">format =</span> <span class="st">"e"</span>, <span class="at">digits =</span> <span class="dv">2</span>), <span class="st">")"</span>)</span>
+<span id="cb5-26"><a href="#cb5-26" aria-hidden="true" tabindex="-1"></a>  )) <span class="sc">|&gt;</span></span>
+<span id="cb5-27"><a href="#cb5-27" aria-hidden="true" tabindex="-1"></a>  <span class="fu">select</span>(Species,Term,Results) <span class="sc">|&gt;</span></span>
+<span id="cb5-28"><a href="#cb5-28" aria-hidden="true" tabindex="-1"></a>  <span class="fu">pivot_wider</span>(<span class="at">names_from=</span><span class="st">"Term"</span>, <span class="at">values_from=</span><span class="st">"Results"</span>) <span class="sc">|&gt;</span></span>
+<span id="cb5-29"><a href="#cb5-29" aria-hidden="true" tabindex="-1"></a>  <span class="fu">select</span>(<span class="sc">!</span><span class="st">`</span><span class="at">(Intercept)</span><span class="st">`</span>)</span>
+<span id="cb5-30"><a href="#cb5-30" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-31"><a href="#cb5-31" aria-hidden="true" tabindex="-1"></a>species_models3 <span class="ot">&lt;-</span> species_models2 <span class="sc">|&gt;</span></span>
+<span id="cb5-32"><a href="#cb5-32" aria-hidden="true" tabindex="-1"></a>  <span class="fu">rename</span>(<span class="at">Disease =</span> PRam,</span>
+<span id="cb5-33"><a href="#cb5-33" aria-hidden="true" tabindex="-1"></a>        <span class="st">`</span><span class="at">Plot Cwd Mass</span><span class="st">`</span> <span class="ot">=</span> <span class="dv">2</span>,</span>
+<span id="cb5-34"><a href="#cb5-34" aria-hidden="true" tabindex="-1"></a>        <span class="st">`</span><span class="at">Host Cwd Mass</span><span class="st">`</span> <span class="ot">=</span> <span class="dv">3</span>)</span>
+<span id="cb5-35"><a href="#cb5-35" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-36"><a href="#cb5-36" aria-hidden="true" tabindex="-1"></a><span class="fu">kable</span>(species_models3) </span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output-display">
+<table class="caption-top table table-sm table-striped small">
+<colgroup>
+<col style="width: 7%">
+<col style="width: 16%">
+<col style="width: 15%">
+<col style="width: 12%">
+<col style="width: 14%">
+<col style="width: 17%">
+<col style="width: 16%">
+</colgroup>
+<thead>
+<tr class="header">
+<th style="text-align: left;">Species</th>
+<th style="text-align: left;">Plot Cwd Mass</th>
+<th style="text-align: left;">Host Cwd Mass</th>
+<th style="text-align: left;">Elevation</th>
+<th style="text-align: left;">Slope</th>
+<th style="text-align: left;">Fire</th>
+<th style="text-align: left;">Disease</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;">Tanoak</td>
+<td style="text-align: left;">-7.903 (9.55e-01)</td>
+<td style="text-align: left;"><strong>-722.877 (1.69e-02)</strong></td>
+<td style="text-align: left;">-80.062 (9.61e-02)</td>
+<td style="text-align: left;">-1351.583 (2.44e-01)</td>
+<td style="text-align: left;">-13227.554 (3.86e-01)</td>
+<td style="text-align: left;">-4683.889 (7.68e-01)</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">Redwood</td>
+<td style="text-align: left;"><strong>-1245.982 (3.66e-02)</strong></td>
+<td style="text-align: left;">1216.577 (3.28e-01)</td>
+<td style="text-align: left;">379.966 (3.64e-01)</td>
+<td style="text-align: left;">-12450.521 (1.19e-01)</td>
+<td style="text-align: left;"><strong>-235822.107 (1.58e-03)</strong></td>
+<td style="text-align: left;">-73753.792 (3.28e-01)</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">Bay laurel</td>
+<td style="text-align: left;">2.791 (9.46e-01)</td>
+<td style="text-align: left;">104.889 (2.89e-01)</td>
+<td style="text-align: left;">-0.762 (9.69e-01)</td>
+<td style="text-align: left;">694.443 (1.78e-01)</td>
+<td style="text-align: left;"><strong>-10740.957 (4.05e-02)</strong></td>
+<td style="text-align: left;"><strong>14737.736 (8.31e-03)</strong></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</section>
+<section id="logistic-regression-of-mortality-status" class="level3">
+<h3 class="anchored" data-anchor-id="logistic-regression-of-mortality-status">Logistic regression of mortality status</h3>
+<p>– Multiple logistic regression iterated across species<br>
+- Attempting to predict drivers of mortality given binary health status.<br>
+- Improvements: Use mixed effects/survival analysis instead of logistic regression.<br>
+<strong>Questions I hope to answer</strong><br>
+Which features, topographic or epidemiological, are driving mortality in Redwood forests?<br>
+Is there a relationship between the explanatory variables and mortality?</p>
+<p>– P-values for fixed variables below the 0.05 threshold will allow us to reject our null hypothesis and indicate a relationship between the explanatory variables and mortality.</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb6"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>mortality <span class="ot">&lt;-</span>  <span class="fu">read_me</span>(<span class="st">"./clean/mortality_mixedmodel.csv"</span>)</span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a>species_mortality <span class="ot">&lt;-</span> <span class="fu">unique</span>(mortality<span class="sc">$</span>Species)</span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a>mortality_model <span class="ot">&lt;-</span> <span class="cf">function</span>(species){</span>
+<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a>  df1 <span class="ot">&lt;-</span> mortality <span class="sc">|&gt;</span></span>
+<span id="cb6-6"><a href="#cb6-6" aria-hidden="true" tabindex="-1"></a>    <span class="fu">filter</span>(Species <span class="sc">==</span> {{species}})</span>
+<span id="cb6-7"><a href="#cb6-7" aria-hidden="true" tabindex="-1"></a>  logistic_model <span class="ot">&lt;-</span> <span class="fu">glm</span>(Mortality <span class="sc">~</span> PlotCwdMass <span class="sc">+</span> HostCwdMass <span class="sc">+</span> Elevation <span class="sc">+</span> Slope <span class="sc">+</span> Fire <span class="sc">+</span> PRam,</span>
+<span id="cb6-8"><a href="#cb6-8" aria-hidden="true" tabindex="-1"></a>                    <span class="at">data=</span>df1, <span class="at">family =</span> binomial</span>
+<span id="cb6-9"><a href="#cb6-9" aria-hidden="true" tabindex="-1"></a>                     )</span>
+<span id="cb6-10"><a href="#cb6-10" aria-hidden="true" tabindex="-1"></a>  summary <span class="ot">&lt;-</span> <span class="fu">summary</span>(logistic_model)</span>
+<span id="cb6-11"><a href="#cb6-11" aria-hidden="true" tabindex="-1"></a>  </span>
+<span id="cb6-12"><a href="#cb6-12" aria-hidden="true" tabindex="-1"></a>  df_summary <span class="ot">&lt;-</span> <span class="fu">as.data.frame</span>(summary<span class="sc">$</span>coefficients) <span class="sc">|&gt;</span></span>
+<span id="cb6-13"><a href="#cb6-13" aria-hidden="true" tabindex="-1"></a>     <span class="fu">mutate</span>(<span class="at">Species =</span> species)</span>
+<span id="cb6-14"><a href="#cb6-14" aria-hidden="true" tabindex="-1"></a>  df_summary<span class="sc">$</span>Term <span class="ot">=</span> <span class="fu">rownames</span>(df_summary)</span>
+<span id="cb6-15"><a href="#cb6-15" aria-hidden="true" tabindex="-1"></a>  <span class="fu">return</span>(df_summary)</span>
+<span id="cb6-16"><a href="#cb6-16" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb6-17"><a href="#cb6-17" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-18"><a href="#cb6-18" aria-hidden="true" tabindex="-1"></a>mortality_results <span class="ot">&lt;-</span> <span class="fu">map_df</span>(species_mortality, mortality_model)</span>
+<span id="cb6-19"><a href="#cb6-19" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-20"><a href="#cb6-20" aria-hidden="true" tabindex="-1"></a>mortality_results2 <span class="ot">&lt;-</span> mortality_results <span class="sc">|&gt;</span></span>
+<span id="cb6-21"><a href="#cb6-21" aria-hidden="true" tabindex="-1"></a>  <span class="fu">rename</span>(<span class="at">p =</span> <span class="dv">4</span>) <span class="sc">|&gt;</span></span>
+<span id="cb6-22"><a href="#cb6-22" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">Results =</span> <span class="fu">ifelse</span>(</span>
+<span id="cb6-23"><a href="#cb6-23" aria-hidden="true" tabindex="-1"></a>    p <span class="sc">&lt;</span> <span class="fl">0.05</span>,</span>
+<span id="cb6-24"><a href="#cb6-24" aria-hidden="true" tabindex="-1"></a>    <span class="fu">paste0</span>(<span class="st">"**"</span>, <span class="fu">round</span>(Estimate, <span class="dv">3</span>), <span class="st">" ("</span>, <span class="fu">formatC</span>(p, <span class="at">format =</span> <span class="st">"e"</span>, <span class="at">digits =</span> <span class="dv">2</span>), <span class="st">")**"</span>),</span>
+<span id="cb6-25"><a href="#cb6-25" aria-hidden="true" tabindex="-1"></a>    <span class="fu">paste0</span>(<span class="fu">round</span>(Estimate, <span class="dv">3</span>), <span class="st">" ("</span>, <span class="fu">formatC</span>(p, <span class="at">format =</span> <span class="st">"e"</span>, <span class="at">digits =</span> <span class="dv">2</span>), <span class="st">")"</span>)</span>
+<span id="cb6-26"><a href="#cb6-26" aria-hidden="true" tabindex="-1"></a>  )) <span class="sc">|&gt;</span></span>
+<span id="cb6-27"><a href="#cb6-27" aria-hidden="true" tabindex="-1"></a>  <span class="fu">select</span>(Species,Term,Results) <span class="sc">|&gt;</span></span>
+<span id="cb6-28"><a href="#cb6-28" aria-hidden="true" tabindex="-1"></a>  <span class="fu">pivot_wider</span>(<span class="at">names_from=</span><span class="st">"Term"</span>, <span class="at">values_from=</span><span class="st">"Results"</span>) <span class="sc">|&gt;</span></span>
+<span id="cb6-29"><a href="#cb6-29" aria-hidden="true" tabindex="-1"></a>  <span class="fu">select</span>(<span class="sc">!</span><span class="st">`</span><span class="at">(Intercept)</span><span class="st">`</span>)</span>
+<span id="cb6-30"><a href="#cb6-30" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-31"><a href="#cb6-31" aria-hidden="true" tabindex="-1"></a>mortality_results3 <span class="ot">&lt;-</span> mortality_results2 <span class="sc">|&gt;</span></span>
+<span id="cb6-32"><a href="#cb6-32" aria-hidden="true" tabindex="-1"></a>  <span class="fu">rename</span>(<span class="at">Disease =</span> PRam,</span>
+<span id="cb6-33"><a href="#cb6-33" aria-hidden="true" tabindex="-1"></a>        <span class="st">`</span><span class="at">Plot Cwd Mass</span><span class="st">`</span> <span class="ot">=</span> <span class="dv">2</span>,</span>
+<span id="cb6-34"><a href="#cb6-34" aria-hidden="true" tabindex="-1"></a>        <span class="st">`</span><span class="at">Host Cwd Mass</span><span class="st">`</span> <span class="ot">=</span> <span class="dv">3</span>)</span>
+<span id="cb6-35"><a href="#cb6-35" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-36"><a href="#cb6-36" aria-hidden="true" tabindex="-1"></a><span class="fu">kable</span>(mortality_results3)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output-display">
+<table class="caption-top table table-sm table-striped small">
+<colgroup>
+<col style="width: 7%">
+<col style="width: 15%">
+<col style="width: 15%">
+<col style="width: 15%">
+<col style="width: 15%">
+<col style="width: 14%">
+<col style="width: 15%">
+</colgroup>
+<thead>
+<tr class="header">
+<th style="text-align: left;">Species</th>
+<th style="text-align: left;">Plot Cwd Mass</th>
+<th style="text-align: left;">Host Cwd Mass</th>
+<th style="text-align: left;">Elevation</th>
+<th style="text-align: left;">Slope</th>
+<th style="text-align: left;">Fire</th>
+<th style="text-align: left;">Disease</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;">Tanoak</td>
+<td style="text-align: left;">-0.001 (8.75e-02)</td>
+<td style="text-align: left;"><strong>-0.016 (2.27e-40)</strong></td>
+<td style="text-align: left;"><strong>-0.002 (3.38e-56)</strong></td>
+<td style="text-align: left;"><strong>-0.03 (9.99e-22)</strong></td>
+<td style="text-align: left;"><strong>0.677 (2.89e-38)</strong></td>
+<td style="text-align: left;">-0.03 (5.04e-01)</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">Redwood</td>
+<td style="text-align: left;"><strong>-0.005 (4.98e-14)</strong></td>
+<td style="text-align: left;"><strong>-0.016 (1.72e-08)</strong></td>
+<td style="text-align: left;"><strong>-0.001 (4.67e-03)</strong></td>
+<td style="text-align: left;"><strong>0.021 (2.39e-04)</strong></td>
+<td style="text-align: left;"><strong>0.368 (1.43e-04)</strong></td>
+<td style="text-align: left;"><strong>-0.289 (2.06e-04)</strong></td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">Bay laurel</td>
+<td style="text-align: left;"><strong>-0.006 (2.05e-05)</strong></td>
+<td style="text-align: left;">0.001 (6.58e-01)</td>
+<td style="text-align: left;">0 (1.13e-01)</td>
+<td style="text-align: left;"><strong>-0.052 (2.07e-27)</strong></td>
+<td style="text-align: left;"><strong>1.292 (2.15e-40)</strong></td>
+<td style="text-align: left;"><strong>-0.252 (2.91e-02)</strong></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</section>
+</section>
+<section id="tracking-stems-through-time" class="level2">
+<h2 class="anchored" data-anchor-id="tracking-stems-through-time">Tracking stems through time</h2>
 <section id="survival-analysis" class="level3">
 <h3 class="anchored" data-anchor-id="survival-analysis">Survival Analysis</h3>
-</section>
-<section id="need-to-load-and-transform-data-into-survival-tables" class="level3">
-<h3 class="anchored" data-anchor-id="need-to-load-and-transform-data-into-survival-tables">Need to load and transform data into survival tables</h3>
+<section id="need-to-load-and-transform-data-into-survival-tables" class="level4">
+<h4 class="anchored" data-anchor-id="need-to-load-and-transform-data-into-survival-tables">1. Need to load and transform data into survival tables</h4>
 <ul>
 <li>Create t and set t0 = 2006</li>
 </ul>
 <div class="cell">
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb6"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>tree <span class="ot">&lt;-</span> <span class="fu">read_me</span>(<span class="st">"tree_table_FINAL.csv"</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<div class="cell-output cell-output-stderr">
-<pre><code>Rows: 116706 Columns: 18
-── Column specification ────────────────────────────────────────────────────────
-Delimiter: ","
-chr  (5): BS_plot, Species, StemID, Status, group
-dbl (13): X, GenetId, RametId, SampleYear, HealthClass, DBH, BasalArea.Plot,...
-
-ℹ Use `spec()` to retrieve the full column specification for this data.
-ℹ Specify the column types or set `show_col_types = FALSE` to quiet this message.</code></pre>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb7"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a>tree <span class="ot">&lt;-</span> <span class="fu">read_me</span>(<span class="st">"./clean/tree_table_FINAL.csv"</span>)</span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a>tree1 <span class="ot">&lt;-</span> tree <span class="sc">|&gt;</span></span>
+<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a>  <span class="fu">filter</span>(Species <span class="sc">%in%</span> <span class="fu">c</span>(<span class="st">"SESE"</span>, <span class="st">"LIDE"</span>,<span class="st">"UMCA"</span>)) <span class="sc">|&gt;</span> </span>
+<span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a>  <span class="fu">rename</span>(<span class="at">Disease =</span> p_ram.presence,</span>
+<span id="cb7-6"><a href="#cb7-6" aria-hidden="true" tabindex="-1"></a>         <span class="at">Fire =</span> fire_presence) <span class="sc">|&gt;</span></span>
+<span id="cb7-7"><a href="#cb7-7" aria-hidden="true" tabindex="-1"></a>  <span class="fu">filter</span>(<span class="sc">!</span><span class="fu">is.na</span>(Species)) <span class="sc">|&gt;</span></span>
+<span id="cb7-8"><a href="#cb7-8" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">t =</span> SampleYear <span class="sc">-</span> <span class="dv">2006</span>,</span>
+<span id="cb7-9"><a href="#cb7-9" aria-hidden="true" tabindex="-1"></a>         <span class="at">Species =</span> <span class="fu">case_when</span>(</span>
+<span id="cb7-10"><a href="#cb7-10" aria-hidden="true" tabindex="-1"></a>                             Species <span class="sc">==</span> <span class="st">"SESE"</span> <span class="sc">~</span> <span class="st">"Redwood"</span>,</span>
+<span id="cb7-11"><a href="#cb7-11" aria-hidden="true" tabindex="-1"></a>                             Species <span class="sc">==</span> <span class="st">"LIDE"</span> <span class="sc">~</span> <span class="st">"Tanoak"</span>,</span>
+<span id="cb7-12"><a href="#cb7-12" aria-hidden="true" tabindex="-1"></a>                             <span class="cn">TRUE</span> <span class="sc">~</span> <span class="st">"Bay laurel"</span>)) <span class="sc">|&gt;</span></span>
+<span id="cb7-13"><a href="#cb7-13" aria-hidden="true" tabindex="-1"></a>  <span class="fu">select</span>(BS_plot, Species, t,RametFail,Disease,Fire, DBH)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </div>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb8"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a>tree1 <span class="ot">&lt;-</span> tree <span class="sc">|&gt;</span></span>
-<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">filter</span>(Species <span class="sc">%in%</span> <span class="fu">c</span>(<span class="st">"SESE"</span>, <span class="st">"LIDE"</span>,<span class="st">"UMCA"</span>)) <span class="sc">|&gt;</span> </span>
-<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">rename</span>(<span class="at">Disease =</span> p_ram.presence,</span>
-<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a>         <span class="at">Fire =</span> fire_presence) <span class="sc">|&gt;</span></span>
-<span id="cb8-5"><a href="#cb8-5" aria-hidden="true" tabindex="-1"></a>  <span class="fu">filter</span>(<span class="sc">!</span><span class="fu">is.na</span>(Species)) <span class="sc">|&gt;</span></span>
-<span id="cb8-6"><a href="#cb8-6" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">t =</span> SampleYear <span class="sc">-</span> <span class="dv">2006</span>,</span>
-<span id="cb8-7"><a href="#cb8-7" aria-hidden="true" tabindex="-1"></a>         <span class="at">Species =</span> <span class="fu">case_when</span>(</span>
-<span id="cb8-8"><a href="#cb8-8" aria-hidden="true" tabindex="-1"></a>                             Species <span class="sc">==</span> <span class="st">"SESE"</span> <span class="sc">~</span> <span class="st">"Redwood"</span>,</span>
-<span id="cb8-9"><a href="#cb8-9" aria-hidden="true" tabindex="-1"></a>                             Species <span class="sc">==</span> <span class="st">"LIDE"</span> <span class="sc">~</span> <span class="st">"Tanoak"</span>,</span>
-<span id="cb8-10"><a href="#cb8-10" aria-hidden="true" tabindex="-1"></a>                             <span class="cn">TRUE</span> <span class="sc">~</span> <span class="st">"Bay laurel"</span>)) <span class="sc">|&gt;</span></span>
-<span id="cb8-11"><a href="#cb8-11" aria-hidden="true" tabindex="-1"></a>  <span class="fu">select</span>(BS_plot, Species, t,RametFail,Disease,Fire, DBH)</span>
-<span id="cb8-12"><a href="#cb8-12" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb8-13"><a href="#cb8-13" aria-hidden="true" tabindex="-1"></a>tree1 <span class="sc">%&gt;%</span> </span>
-<span id="cb8-14"><a href="#cb8-14" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">status =</span> dplyr<span class="sc">::</span><span class="fu">recode</span>(RametFail,<span class="st">"0"</span> <span class="ot">=</span> <span class="st">"Censored"</span>, <span class="st">"1"</span> <span class="ot">=</span> <span class="st">"Death"</span>)) <span class="sc">%&gt;%</span> </span>
-<span id="cb8-15"><a href="#cb8-15" aria-hidden="true" tabindex="-1"></a>  <span class="fu">tbl_summary</span>(<span class="at">by =</span> status,</span>
-<span id="cb8-16"><a href="#cb8-16" aria-hidden="true" tabindex="-1"></a>              <span class="at">statistic =</span> <span class="fu">list</span>(<span class="fu">all_continuous</span>() <span class="sc">~</span> <span class="st">"{mean} ({sd})"</span>, </span>
-<span id="cb8-17"><a href="#cb8-17" aria-hidden="true" tabindex="-1"></a>                              <span class="fu">all_categorical</span>() <span class="sc">~</span> <span class="st">"{n} ({p}%)"</span>),</span>
-<span id="cb8-18"><a href="#cb8-18" aria-hidden="true" tabindex="-1"></a>              <span class="at">type =</span> <span class="fu">list</span>(<span class="fu">where</span>(is.logical) <span class="sc">~</span> <span class="st">"categorical"</span>),</span>
-<span id="cb8-19"><a href="#cb8-19" aria-hidden="true" tabindex="-1"></a>              <span class="at">label =</span> <span class="fu">list</span>(Disease <span class="sc">~</span> <span class="st">"Disease status"</span>, </span>
-<span id="cb8-20"><a href="#cb8-20" aria-hidden="true" tabindex="-1"></a>                           DBH <span class="sc">~</span> <span class="st">"DBH"</span>, </span>
-<span id="cb8-21"><a href="#cb8-21" aria-hidden="true" tabindex="-1"></a>                           t<span class="sc">~</span><span class="st">"t"</span>),</span>
-<span id="cb8-22"><a href="#cb8-22" aria-hidden="true" tabindex="-1"></a>            <span class="at">missing_text =</span> <span class="st">"Missing"</span>) <span class="sc">%&gt;%</span> </span>
-<span id="cb8-23"><a href="#cb8-23" aria-hidden="true" tabindex="-1"></a>  <span class="fu">modify_caption</span>(<span class="st">"**Table 1. Patient Characteristic**"</span>)  <span class="sc">%&gt;%</span></span>
-<span id="cb8-24"><a href="#cb8-24" aria-hidden="true" tabindex="-1"></a>  <span class="fu">modify_header</span>(label <span class="sc">~</span> <span class="st">"**Variable**"</span>) <span class="sc">%&gt;%</span> </span>
-<span id="cb8-25"><a href="#cb8-25" aria-hidden="true" tabindex="-1"></a>  <span class="fu">modify_spanning_header</span>(<span class="fu">c</span>(<span class="st">"stat_1"</span>, <span class="st">"stat_2"</span>) <span class="sc">~</span> <span class="st">"**Survival Status**"</span>) <span class="sc">%&gt;%</span></span>
-<span id="cb8-26"><a href="#cb8-26" aria-hidden="true" tabindex="-1"></a>  <span class="fu">modify_footnote</span>(<span class="fu">all_stat_cols</span>() <span class="sc">~</span> <span class="st">"Mean (SD) or Frequency (%)"</span>) <span class="sc">%&gt;%</span></span>
-<span id="cb8-27"><a href="#cb8-27" aria-hidden="true" tabindex="-1"></a>  <span class="fu">bold_labels</span>() <span class="sc">%&gt;%</span></span>
-<span id="cb8-28"><a href="#cb8-28" aria-hidden="true" tabindex="-1"></a>  <span class="fu">as_gt</span>()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+<section id="kaplian---meier" class="level4">
+<h4 class="anchored" data-anchor-id="kaplian---meier"><a href="https://www.emilyzabor.com/survival-analysis-in-r.html#part-4-advanced-topics">Kaplian - Meier</a></h4>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb8"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a>s1 <span class="ot">&lt;-</span> <span class="fu">survfit2</span>(<span class="fu">Surv</span>(t,RametFail) <span class="sc">~</span> Species, <span class="at">data=</span>tree1)</span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a>s1 <span class="sc">|&gt;</span></span>
+<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a>  <span class="fu">ggsurvfit</span>() <span class="sc">+</span></span>
+<span id="cb8-5"><a href="#cb8-5" aria-hidden="true" tabindex="-1"></a>  <span class="fu">facet_wrap</span>(<span class="sc">~</span>strata) <span class="sc">+</span></span>
+<span id="cb8-6"><a href="#cb8-6" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_classic</span>() <span class="sc">+</span></span>
+<span id="cb8-7"><a href="#cb8-7" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">title=</span><span class="st">"Kaplan-Meier Survival Function of Big Sur Species"</span>, <span class="at">x=</span><span class="st">"Time"</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output-display">
-<div id="frutovnyfy" style="padding-left:0px;padding-right:0px;padding-top:10px;padding-bottom:10px;overflow-x:auto;overflow-y:auto;width:auto;height:auto;">
-<style>#frutovnyfy table {
-  font-family: system-ui, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-}
-
-#frutovnyfy thead, #frutovnyfy tbody, #frutovnyfy tfoot, #frutovnyfy tr, #frutovnyfy td, #frutovnyfy th {
-  border-style: none;
-}
-
-#frutovnyfy p {
-  margin: 0;
-  padding: 0;
-}
-
-#frutovnyfy .gt_table {
-  display: table;
-  border-collapse: collapse;
-  line-height: normal;
-  margin-left: auto;
-  margin-right: auto;
-  color: #333333;
-  font-size: 16px;
-  font-weight: normal;
-  font-style: normal;
-  background-color: #FFFFFF;
-  width: auto;
-  border-top-style: solid;
-  border-top-width: 2px;
-  border-top-color: #A8A8A8;
-  border-right-style: none;
-  border-right-width: 2px;
-  border-right-color: #D3D3D3;
-  border-bottom-style: solid;
-  border-bottom-width: 2px;
-  border-bottom-color: #A8A8A8;
-  border-left-style: none;
-  border-left-width: 2px;
-  border-left-color: #D3D3D3;
-}
-
-#frutovnyfy .gt_caption {
-  padding-top: 4px;
-  padding-bottom: 4px;
-}
-
-#frutovnyfy .gt_title {
-  color: #333333;
-  font-size: 125%;
-  font-weight: initial;
-  padding-top: 4px;
-  padding-bottom: 4px;
-  padding-left: 5px;
-  padding-right: 5px;
-  border-bottom-color: #FFFFFF;
-  border-bottom-width: 0;
-}
-
-#frutovnyfy .gt_subtitle {
-  color: #333333;
-  font-size: 85%;
-  font-weight: initial;
-  padding-top: 3px;
-  padding-bottom: 5px;
-  padding-left: 5px;
-  padding-right: 5px;
-  border-top-color: #FFFFFF;
-  border-top-width: 0;
-}
-
-#frutovnyfy .gt_heading {
-  background-color: #FFFFFF;
-  text-align: center;
-  border-bottom-color: #FFFFFF;
-  border-left-style: none;
-  border-left-width: 1px;
-  border-left-color: #D3D3D3;
-  border-right-style: none;
-  border-right-width: 1px;
-  border-right-color: #D3D3D3;
-}
-
-#frutovnyfy .gt_bottom_border {
-  border-bottom-style: solid;
-  border-bottom-width: 2px;
-  border-bottom-color: #D3D3D3;
-}
-
-#frutovnyfy .gt_col_headings {
-  border-top-style: solid;
-  border-top-width: 2px;
-  border-top-color: #D3D3D3;
-  border-bottom-style: solid;
-  border-bottom-width: 2px;
-  border-bottom-color: #D3D3D3;
-  border-left-style: none;
-  border-left-width: 1px;
-  border-left-color: #D3D3D3;
-  border-right-style: none;
-  border-right-width: 1px;
-  border-right-color: #D3D3D3;
-}
-
-#frutovnyfy .gt_col_heading {
-  color: #333333;
-  background-color: #FFFFFF;
-  font-size: 100%;
-  font-weight: normal;
-  text-transform: inherit;
-  border-left-style: none;
-  border-left-width: 1px;
-  border-left-color: #D3D3D3;
-  border-right-style: none;
-  border-right-width: 1px;
-  border-right-color: #D3D3D3;
-  vertical-align: bottom;
-  padding-top: 5px;
-  padding-bottom: 6px;
-  padding-left: 5px;
-  padding-right: 5px;
-  overflow-x: hidden;
-}
-
-#frutovnyfy .gt_column_spanner_outer {
-  color: #333333;
-  background-color: #FFFFFF;
-  font-size: 100%;
-  font-weight: normal;
-  text-transform: inherit;
-  padding-top: 0;
-  padding-bottom: 0;
-  padding-left: 4px;
-  padding-right: 4px;
-}
-
-#frutovnyfy .gt_column_spanner_outer:first-child {
-  padding-left: 0;
-}
-
-#frutovnyfy .gt_column_spanner_outer:last-child {
-  padding-right: 0;
-}
-
-#frutovnyfy .gt_column_spanner {
-  border-bottom-style: solid;
-  border-bottom-width: 2px;
-  border-bottom-color: #D3D3D3;
-  vertical-align: bottom;
-  padding-top: 5px;
-  padding-bottom: 5px;
-  overflow-x: hidden;
-  display: inline-block;
-  width: 100%;
-}
-
-#frutovnyfy .gt_spanner_row {
-  border-bottom-style: hidden;
-}
-
-#frutovnyfy .gt_group_heading {
-  padding-top: 8px;
-  padding-bottom: 8px;
-  padding-left: 5px;
-  padding-right: 5px;
-  color: #333333;
-  background-color: #FFFFFF;
-  font-size: 100%;
-  font-weight: initial;
-  text-transform: inherit;
-  border-top-style: solid;
-  border-top-width: 2px;
-  border-top-color: #D3D3D3;
-  border-bottom-style: solid;
-  border-bottom-width: 2px;
-  border-bottom-color: #D3D3D3;
-  border-left-style: none;
-  border-left-width: 1px;
-  border-left-color: #D3D3D3;
-  border-right-style: none;
-  border-right-width: 1px;
-  border-right-color: #D3D3D3;
-  vertical-align: middle;
-  text-align: left;
-}
-
-#frutovnyfy .gt_empty_group_heading {
-  padding: 0.5px;
-  color: #333333;
-  background-color: #FFFFFF;
-  font-size: 100%;
-  font-weight: initial;
-  border-top-style: solid;
-  border-top-width: 2px;
-  border-top-color: #D3D3D3;
-  border-bottom-style: solid;
-  border-bottom-width: 2px;
-  border-bottom-color: #D3D3D3;
-  vertical-align: middle;
-}
-
-#frutovnyfy .gt_from_md > :first-child {
-  margin-top: 0;
-}
-
-#frutovnyfy .gt_from_md > :last-child {
-  margin-bottom: 0;
-}
-
-#frutovnyfy .gt_row {
-  padding-top: 8px;
-  padding-bottom: 8px;
-  padding-left: 5px;
-  padding-right: 5px;
-  margin: 10px;
-  border-top-style: solid;
-  border-top-width: 1px;
-  border-top-color: #D3D3D3;
-  border-left-style: none;
-  border-left-width: 1px;
-  border-left-color: #D3D3D3;
-  border-right-style: none;
-  border-right-width: 1px;
-  border-right-color: #D3D3D3;
-  vertical-align: middle;
-  overflow-x: hidden;
-}
-
-#frutovnyfy .gt_stub {
-  color: #333333;
-  background-color: #FFFFFF;
-  font-size: 100%;
-  font-weight: initial;
-  text-transform: inherit;
-  border-right-style: solid;
-  border-right-width: 2px;
-  border-right-color: #D3D3D3;
-  padding-left: 5px;
-  padding-right: 5px;
-}
-
-#frutovnyfy .gt_stub_row_group {
-  color: #333333;
-  background-color: #FFFFFF;
-  font-size: 100%;
-  font-weight: initial;
-  text-transform: inherit;
-  border-right-style: solid;
-  border-right-width: 2px;
-  border-right-color: #D3D3D3;
-  padding-left: 5px;
-  padding-right: 5px;
-  vertical-align: top;
-}
-
-#frutovnyfy .gt_row_group_first td {
-  border-top-width: 2px;
-}
-
-#frutovnyfy .gt_row_group_first th {
-  border-top-width: 2px;
-}
-
-#frutovnyfy .gt_summary_row {
-  color: #333333;
-  background-color: #FFFFFF;
-  text-transform: inherit;
-  padding-top: 8px;
-  padding-bottom: 8px;
-  padding-left: 5px;
-  padding-right: 5px;
-}
-
-#frutovnyfy .gt_first_summary_row {
-  border-top-style: solid;
-  border-top-color: #D3D3D3;
-}
-
-#frutovnyfy .gt_first_summary_row.thick {
-  border-top-width: 2px;
-}
-
-#frutovnyfy .gt_last_summary_row {
-  padding-top: 8px;
-  padding-bottom: 8px;
-  padding-left: 5px;
-  padding-right: 5px;
-  border-bottom-style: solid;
-  border-bottom-width: 2px;
-  border-bottom-color: #D3D3D3;
-}
-
-#frutovnyfy .gt_grand_summary_row {
-  color: #333333;
-  background-color: #FFFFFF;
-  text-transform: inherit;
-  padding-top: 8px;
-  padding-bottom: 8px;
-  padding-left: 5px;
-  padding-right: 5px;
-}
-
-#frutovnyfy .gt_first_grand_summary_row {
-  padding-top: 8px;
-  padding-bottom: 8px;
-  padding-left: 5px;
-  padding-right: 5px;
-  border-top-style: double;
-  border-top-width: 6px;
-  border-top-color: #D3D3D3;
-}
-
-#frutovnyfy .gt_last_grand_summary_row_top {
-  padding-top: 8px;
-  padding-bottom: 8px;
-  padding-left: 5px;
-  padding-right: 5px;
-  border-bottom-style: double;
-  border-bottom-width: 6px;
-  border-bottom-color: #D3D3D3;
-}
-
-#frutovnyfy .gt_striped {
-  background-color: rgba(128, 128, 128, 0.05);
-}
-
-#frutovnyfy .gt_table_body {
-  border-top-style: solid;
-  border-top-width: 2px;
-  border-top-color: #D3D3D3;
-  border-bottom-style: solid;
-  border-bottom-width: 2px;
-  border-bottom-color: #D3D3D3;
-}
-
-#frutovnyfy .gt_footnotes {
-  color: #333333;
-  background-color: #FFFFFF;
-  border-bottom-style: none;
-  border-bottom-width: 2px;
-  border-bottom-color: #D3D3D3;
-  border-left-style: none;
-  border-left-width: 2px;
-  border-left-color: #D3D3D3;
-  border-right-style: none;
-  border-right-width: 2px;
-  border-right-color: #D3D3D3;
-}
-
-#frutovnyfy .gt_footnote {
-  margin: 0px;
-  font-size: 90%;
-  padding-top: 4px;
-  padding-bottom: 4px;
-  padding-left: 5px;
-  padding-right: 5px;
-}
-
-#frutovnyfy .gt_sourcenotes {
-  color: #333333;
-  background-color: #FFFFFF;
-  border-bottom-style: none;
-  border-bottom-width: 2px;
-  border-bottom-color: #D3D3D3;
-  border-left-style: none;
-  border-left-width: 2px;
-  border-left-color: #D3D3D3;
-  border-right-style: none;
-  border-right-width: 2px;
-  border-right-color: #D3D3D3;
-}
-
-#frutovnyfy .gt_sourcenote {
-  font-size: 90%;
-  padding-top: 4px;
-  padding-bottom: 4px;
-  padding-left: 5px;
-  padding-right: 5px;
-}
-
-#frutovnyfy .gt_left {
-  text-align: left;
-}
-
-#frutovnyfy .gt_center {
-  text-align: center;
-}
-
-#frutovnyfy .gt_right {
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-}
-
-#frutovnyfy .gt_font_normal {
-  font-weight: normal;
-}
-
-#frutovnyfy .gt_font_bold {
-  font-weight: bold;
-}
-
-#frutovnyfy .gt_font_italic {
-  font-style: italic;
-}
-
-#frutovnyfy .gt_super {
-  font-size: 65%;
-}
-
-#frutovnyfy .gt_footnote_marks {
-  font-size: 75%;
-  vertical-align: 0.4em;
-  position: initial;
-}
-
-#frutovnyfy .gt_asterisk {
-  font-size: 100%;
-  vertical-align: 0;
-}
-
-#frutovnyfy .gt_indent_1 {
-  text-indent: 5px;
-}
-
-#frutovnyfy .gt_indent_2 {
-  text-indent: 10px;
-}
-
-#frutovnyfy .gt_indent_3 {
-  text-indent: 15px;
-}
-
-#frutovnyfy .gt_indent_4 {
-  text-indent: 20px;
-}
-
-#frutovnyfy .gt_indent_5 {
-  text-indent: 25px;
-}
-
-#frutovnyfy .katex-display {
-  display: inline-flex !important;
-  margin-bottom: 0.75em !important;
-}
-
-#frutovnyfy div.Reactable > div.rt-table > div.rt-thead > div.rt-tr.rt-tr-group-header > div.rt-th-group:after {
-  height: 0px !important;
-}
-</style>
-
-<table class="gt_table caption-top table table-sm table-striped small" data-quarto-bootstrap="false">
-<caption><strong>Table 1. Patient Characteristic</strong></caption>
-<colgroup>
-<col style="width: 33%">
-<col style="width: 33%">
-<col style="width: 33%">
-</colgroup>
-<thead>
-<tr class="gt_col_headings gt_spanner_row header">
-<th rowspan="2" id="label" class="gt_col_heading gt_columns_bottom_border gt_left" data-quarto-table-cell-role="th" scope="col"><strong>Variable</strong></th>
-<th colspan="2" id="level 1; stat_1" class="gt_center gt_columns_top_border gt_column_spanner_outer" data-quarto-table-cell-role="th" scope="colgroup"><div class="gt_column_spanner">
-<strong>Survival Status</strong>
-</div></th>
-</tr>
-<tr class="gt_col_headings even">
-<th id="stat_1" class="gt_col_heading gt_columns_bottom_border gt_center" data-quarto-table-cell-role="th" scope="col"><strong>Censored</strong><br>
-N = 47,835<span class="gt_footnote_marks" style="white-space:nowrap;font-style:italic;font-weight:normal;line-height:0;"><sup>1</sup></span></th>
-<th id="stat_2" class="gt_col_heading gt_columns_bottom_border gt_center" data-quarto-table-cell-role="th" scope="col"><strong>Death</strong><br>
-N = 38,894<span class="gt_footnote_marks" style="white-space:nowrap;font-style:italic;font-weight:normal;line-height:0;"><sup>1</sup></span></th>
-</tr>
-</thead>
-<tbody class="gt_table_body">
-<tr class="odd">
-<td class="gt_row gt_left" headers="label" style="font-weight: bold">BS_plot</td>
-<td class="gt_row gt_center" headers="stat_1"><br>
-</td>
-<td class="gt_row gt_center" headers="stat_2"><br>
-</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS002</td>
-<td class="gt_row gt_center" headers="stat_1">444 (0.9%)</td>
-<td class="gt_row gt_center" headers="stat_2">130 (0.3%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS003</td>
-<td class="gt_row gt_center" headers="stat_1">12 (&lt;0.1%)</td>
-<td class="gt_row gt_center" headers="stat_2">1 (&lt;0.1%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS004</td>
-<td class="gt_row gt_center" headers="stat_1">10 (&lt;0.1%)</td>
-<td class="gt_row gt_center" headers="stat_2">0 (0%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS005</td>
-<td class="gt_row gt_center" headers="stat_1">89 (0.2%)</td>
-<td class="gt_row gt_center" headers="stat_2">2 (&lt;0.1%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS006</td>
-<td class="gt_row gt_center" headers="stat_1">385 (0.8%)</td>
-<td class="gt_row gt_center" headers="stat_2">12 (&lt;0.1%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS007</td>
-<td class="gt_row gt_center" headers="stat_1">270 (0.6%)</td>
-<td class="gt_row gt_center" headers="stat_2">1 (&lt;0.1%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS011</td>
-<td class="gt_row gt_center" headers="stat_1">2 (&lt;0.1%)</td>
-<td class="gt_row gt_center" headers="stat_2">0 (0%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS015</td>
-<td class="gt_row gt_center" headers="stat_1">62 (0.1%)</td>
-<td class="gt_row gt_center" headers="stat_2">12 (&lt;0.1%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS016</td>
-<td class="gt_row gt_center" headers="stat_1">33 (&lt;0.1%)</td>
-<td class="gt_row gt_center" headers="stat_2">4 (&lt;0.1%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS017</td>
-<td class="gt_row gt_center" headers="stat_1">81 (0.2%)</td>
-<td class="gt_row gt_center" headers="stat_2">5 (&lt;0.1%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS018</td>
-<td class="gt_row gt_center" headers="stat_1">26 (&lt;0.1%)</td>
-<td class="gt_row gt_center" headers="stat_2">1 (&lt;0.1%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS019</td>
-<td class="gt_row gt_center" headers="stat_1">108 (0.2%)</td>
-<td class="gt_row gt_center" headers="stat_2">21 (&lt;0.1%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS020</td>
-<td class="gt_row gt_center" headers="stat_1">494 (1.0%)</td>
-<td class="gt_row gt_center" headers="stat_2">118 (0.3%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS022</td>
-<td class="gt_row gt_center" headers="stat_1">40 (&lt;0.1%)</td>
-<td class="gt_row gt_center" headers="stat_2">1 (&lt;0.1%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS026</td>
-<td class="gt_row gt_center" headers="stat_1">68 (0.1%)</td>
-<td class="gt_row gt_center" headers="stat_2">2 (&lt;0.1%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS027</td>
-<td class="gt_row gt_center" headers="stat_1">223 (0.5%)</td>
-<td class="gt_row gt_center" headers="stat_2">80 (0.2%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS032</td>
-<td class="gt_row gt_center" headers="stat_1">403 (0.8%)</td>
-<td class="gt_row gt_center" headers="stat_2">57 (0.1%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS034</td>
-<td class="gt_row gt_center" headers="stat_1">25 (&lt;0.1%)</td>
-<td class="gt_row gt_center" headers="stat_2">1 (&lt;0.1%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS035</td>
-<td class="gt_row gt_center" headers="stat_1">14 (&lt;0.1%)</td>
-<td class="gt_row gt_center" headers="stat_2">1 (&lt;0.1%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS038</td>
-<td class="gt_row gt_center" headers="stat_1">271 (0.6%)</td>
-<td class="gt_row gt_center" headers="stat_2">252 (0.6%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS044</td>
-<td class="gt_row gt_center" headers="stat_1">9 (&lt;0.1%)</td>
-<td class="gt_row gt_center" headers="stat_2">0 (0%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS045</td>
-<td class="gt_row gt_center" headers="stat_1">84 (0.2%)</td>
-<td class="gt_row gt_center" headers="stat_2">48 (0.1%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS046</td>
-<td class="gt_row gt_center" headers="stat_1">210 (0.4%)</td>
-<td class="gt_row gt_center" headers="stat_2">138 (0.4%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS047</td>
-<td class="gt_row gt_center" headers="stat_1">7 (&lt;0.1%)</td>
-<td class="gt_row gt_center" headers="stat_2">1 (&lt;0.1%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS048</td>
-<td class="gt_row gt_center" headers="stat_1">82 (0.2%)</td>
-<td class="gt_row gt_center" headers="stat_2">46 (0.1%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS050</td>
-<td class="gt_row gt_center" headers="stat_1">219 (0.5%)</td>
-<td class="gt_row gt_center" headers="stat_2">256 (0.7%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS052</td>
-<td class="gt_row gt_center" headers="stat_1">382 (0.8%)</td>
-<td class="gt_row gt_center" headers="stat_2">617 (1.6%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS053</td>
-<td class="gt_row gt_center" headers="stat_1">220 (0.5%)</td>
-<td class="gt_row gt_center" headers="stat_2">184 (0.5%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS054</td>
-<td class="gt_row gt_center" headers="stat_1">122 (0.3%)</td>
-<td class="gt_row gt_center" headers="stat_2">18 (&lt;0.1%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS057</td>
-<td class="gt_row gt_center" headers="stat_1">36 (&lt;0.1%)</td>
-<td class="gt_row gt_center" headers="stat_2">72 (0.2%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS058</td>
-<td class="gt_row gt_center" headers="stat_1">1,365 (2.9%)</td>
-<td class="gt_row gt_center" headers="stat_2">589 (1.5%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS059</td>
-<td class="gt_row gt_center" headers="stat_1">213 (0.4%)</td>
-<td class="gt_row gt_center" headers="stat_2">121 (0.3%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS060</td>
-<td class="gt_row gt_center" headers="stat_1">16 (&lt;0.1%)</td>
-<td class="gt_row gt_center" headers="stat_2">6 (&lt;0.1%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS062</td>
-<td class="gt_row gt_center" headers="stat_1">132 (0.3%)</td>
-<td class="gt_row gt_center" headers="stat_2">48 (0.1%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS063</td>
-<td class="gt_row gt_center" headers="stat_1">33 (&lt;0.1%)</td>
-<td class="gt_row gt_center" headers="stat_2">0 (0%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS066</td>
-<td class="gt_row gt_center" headers="stat_1">182 (0.4%)</td>
-<td class="gt_row gt_center" headers="stat_2">261 (0.7%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS070</td>
-<td class="gt_row gt_center" headers="stat_1">162 (0.3%)</td>
-<td class="gt_row gt_center" headers="stat_2">87 (0.2%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS072</td>
-<td class="gt_row gt_center" headers="stat_1">30 (&lt;0.1%)</td>
-<td class="gt_row gt_center" headers="stat_2">37 (&lt;0.1%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS073</td>
-<td class="gt_row gt_center" headers="stat_1">90 (0.2%)</td>
-<td class="gt_row gt_center" headers="stat_2">173 (0.4%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS076</td>
-<td class="gt_row gt_center" headers="stat_1">96 (0.2%)</td>
-<td class="gt_row gt_center" headers="stat_2">5 (&lt;0.1%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS077</td>
-<td class="gt_row gt_center" headers="stat_1">9 (&lt;0.1%)</td>
-<td class="gt_row gt_center" headers="stat_2">12 (&lt;0.1%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS078</td>
-<td class="gt_row gt_center" headers="stat_1">210 (0.4%)</td>
-<td class="gt_row gt_center" headers="stat_2">169 (0.4%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS079</td>
-<td class="gt_row gt_center" headers="stat_1">89 (0.2%)</td>
-<td class="gt_row gt_center" headers="stat_2">0 (0%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS080</td>
-<td class="gt_row gt_center" headers="stat_1">56 (0.1%)</td>
-<td class="gt_row gt_center" headers="stat_2">2 (&lt;0.1%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS081</td>
-<td class="gt_row gt_center" headers="stat_1">223 (0.5%)</td>
-<td class="gt_row gt_center" headers="stat_2">210 (0.5%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS083</td>
-<td class="gt_row gt_center" headers="stat_1">13 (&lt;0.1%)</td>
-<td class="gt_row gt_center" headers="stat_2">11 (&lt;0.1%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS084</td>
-<td class="gt_row gt_center" headers="stat_1">209 (0.4%)</td>
-<td class="gt_row gt_center" headers="stat_2">155 (0.4%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS085</td>
-<td class="gt_row gt_center" headers="stat_1">404 (0.8%)</td>
-<td class="gt_row gt_center" headers="stat_2">337 (0.9%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS086</td>
-<td class="gt_row gt_center" headers="stat_1">131 (0.3%)</td>
-<td class="gt_row gt_center" headers="stat_2">191 (0.5%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS087</td>
-<td class="gt_row gt_center" headers="stat_1">42 (&lt;0.1%)</td>
-<td class="gt_row gt_center" headers="stat_2">10 (&lt;0.1%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS092</td>
-<td class="gt_row gt_center" headers="stat_1">134 (0.3%)</td>
-<td class="gt_row gt_center" headers="stat_2">174 (0.4%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS094</td>
-<td class="gt_row gt_center" headers="stat_1">152 (0.3%)</td>
-<td class="gt_row gt_center" headers="stat_2">90 (0.2%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS098</td>
-<td class="gt_row gt_center" headers="stat_1">145 (0.3%)</td>
-<td class="gt_row gt_center" headers="stat_2">165 (0.4%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS102</td>
-<td class="gt_row gt_center" headers="stat_1">53 (0.1%)</td>
-<td class="gt_row gt_center" headers="stat_2">8 (&lt;0.1%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS103</td>
-<td class="gt_row gt_center" headers="stat_1">27 (&lt;0.1%)</td>
-<td class="gt_row gt_center" headers="stat_2">8 (&lt;0.1%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS111</td>
-<td class="gt_row gt_center" headers="stat_1">41 (&lt;0.1%)</td>
-<td class="gt_row gt_center" headers="stat_2">14 (&lt;0.1%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS112</td>
-<td class="gt_row gt_center" headers="stat_1">52 (0.1%)</td>
-<td class="gt_row gt_center" headers="stat_2">3 (&lt;0.1%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS118</td>
-<td class="gt_row gt_center" headers="stat_1">100 (0.2%)</td>
-<td class="gt_row gt_center" headers="stat_2">12 (&lt;0.1%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS119</td>
-<td class="gt_row gt_center" headers="stat_1">68 (0.1%)</td>
-<td class="gt_row gt_center" headers="stat_2">14 (&lt;0.1%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS121</td>
-<td class="gt_row gt_center" headers="stat_1">2 (&lt;0.1%)</td>
-<td class="gt_row gt_center" headers="stat_2">0 (0%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS122</td>
-<td class="gt_row gt_center" headers="stat_1">201 (0.4%)</td>
-<td class="gt_row gt_center" headers="stat_2">94 (0.2%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS123</td>
-<td class="gt_row gt_center" headers="stat_1">59 (0.1%)</td>
-<td class="gt_row gt_center" headers="stat_2">20 (&lt;0.1%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS124</td>
-<td class="gt_row gt_center" headers="stat_1">132 (0.3%)</td>
-<td class="gt_row gt_center" headers="stat_2">45 (0.1%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS125</td>
-<td class="gt_row gt_center" headers="stat_1">53 (0.1%)</td>
-<td class="gt_row gt_center" headers="stat_2">3 (&lt;0.1%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS126</td>
-<td class="gt_row gt_center" headers="stat_1">8 (&lt;0.1%)</td>
-<td class="gt_row gt_center" headers="stat_2">0 (0%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS128</td>
-<td class="gt_row gt_center" headers="stat_1">19 (&lt;0.1%)</td>
-<td class="gt_row gt_center" headers="stat_2">12 (&lt;0.1%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS129</td>
-<td class="gt_row gt_center" headers="stat_1">11 (&lt;0.1%)</td>
-<td class="gt_row gt_center" headers="stat_2">0 (0%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS130</td>
-<td class="gt_row gt_center" headers="stat_1">171 (0.4%)</td>
-<td class="gt_row gt_center" headers="stat_2">52 (0.1%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS131</td>
-<td class="gt_row gt_center" headers="stat_1">457 (1.0%)</td>
-<td class="gt_row gt_center" headers="stat_2">230 (0.6%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS132</td>
-<td class="gt_row gt_center" headers="stat_1">1,363 (2.8%)</td>
-<td class="gt_row gt_center" headers="stat_2">1,108 (2.8%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS133</td>
-<td class="gt_row gt_center" headers="stat_1">9 (&lt;0.1%)</td>
-<td class="gt_row gt_center" headers="stat_2">3 (&lt;0.1%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS134</td>
-<td class="gt_row gt_center" headers="stat_1">79 (0.2%)</td>
-<td class="gt_row gt_center" headers="stat_2">72 (0.2%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS135</td>
-<td class="gt_row gt_center" headers="stat_1">88 (0.2%)</td>
-<td class="gt_row gt_center" headers="stat_2">21 (&lt;0.1%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS137</td>
-<td class="gt_row gt_center" headers="stat_1">49 (0.1%)</td>
-<td class="gt_row gt_center" headers="stat_2">4 (&lt;0.1%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS138</td>
-<td class="gt_row gt_center" headers="stat_1">13 (&lt;0.1%)</td>
-<td class="gt_row gt_center" headers="stat_2">1 (&lt;0.1%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS139</td>
-<td class="gt_row gt_center" headers="stat_1">2 (&lt;0.1%)</td>
-<td class="gt_row gt_center" headers="stat_2">0 (0%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS140</td>
-<td class="gt_row gt_center" headers="stat_1">226 (0.5%)</td>
-<td class="gt_row gt_center" headers="stat_2">134 (0.3%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS141</td>
-<td class="gt_row gt_center" headers="stat_1">202 (0.4%)</td>
-<td class="gt_row gt_center" headers="stat_2">375 (1.0%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS146</td>
-<td class="gt_row gt_center" headers="stat_1">650 (1.4%)</td>
-<td class="gt_row gt_center" headers="stat_2">179 (0.5%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS147</td>
-<td class="gt_row gt_center" headers="stat_1">393 (0.8%)</td>
-<td class="gt_row gt_center" headers="stat_2">315 (0.8%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS148</td>
-<td class="gt_row gt_center" headers="stat_1">107 (0.2%)</td>
-<td class="gt_row gt_center" headers="stat_2">96 (0.2%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS149</td>
-<td class="gt_row gt_center" headers="stat_1">71 (0.1%)</td>
-<td class="gt_row gt_center" headers="stat_2">21 (&lt;0.1%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS150</td>
-<td class="gt_row gt_center" headers="stat_1">243 (0.5%)</td>
-<td class="gt_row gt_center" headers="stat_2">57 (0.1%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS151</td>
-<td class="gt_row gt_center" headers="stat_1">50 (0.1%)</td>
-<td class="gt_row gt_center" headers="stat_2">5 (&lt;0.1%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS152</td>
-<td class="gt_row gt_center" headers="stat_1">90 (0.2%)</td>
-<td class="gt_row gt_center" headers="stat_2">8 (&lt;0.1%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS156</td>
-<td class="gt_row gt_center" headers="stat_1">135 (0.3%)</td>
-<td class="gt_row gt_center" headers="stat_2">242 (0.6%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS157</td>
-<td class="gt_row gt_center" headers="stat_1">141 (0.3%)</td>
-<td class="gt_row gt_center" headers="stat_2">50 (0.1%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS158</td>
-<td class="gt_row gt_center" headers="stat_1">51 (0.1%)</td>
-<td class="gt_row gt_center" headers="stat_2">79 (0.2%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS159</td>
-<td class="gt_row gt_center" headers="stat_1">238 (0.5%)</td>
-<td class="gt_row gt_center" headers="stat_2">207 (0.5%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS160</td>
-<td class="gt_row gt_center" headers="stat_1">562 (1.2%)</td>
-<td class="gt_row gt_center" headers="stat_2">842 (2.2%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS161</td>
-<td class="gt_row gt_center" headers="stat_1">49 (0.1%)</td>
-<td class="gt_row gt_center" headers="stat_2">2 (&lt;0.1%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS162</td>
-<td class="gt_row gt_center" headers="stat_1">171 (0.4%)</td>
-<td class="gt_row gt_center" headers="stat_2">8 (&lt;0.1%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS163</td>
-<td class="gt_row gt_center" headers="stat_1">3 (&lt;0.1%)</td>
-<td class="gt_row gt_center" headers="stat_2">0 (0%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS165</td>
-<td class="gt_row gt_center" headers="stat_1">287 (0.6%)</td>
-<td class="gt_row gt_center" headers="stat_2">823 (2.1%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS166</td>
-<td class="gt_row gt_center" headers="stat_1">373 (0.8%)</td>
-<td class="gt_row gt_center" headers="stat_2">913 (2.3%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS167</td>
-<td class="gt_row gt_center" headers="stat_1">160 (0.3%)</td>
-<td class="gt_row gt_center" headers="stat_2">5 (&lt;0.1%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS168</td>
-<td class="gt_row gt_center" headers="stat_1">222 (0.5%)</td>
-<td class="gt_row gt_center" headers="stat_2">398 (1.0%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS172</td>
-<td class="gt_row gt_center" headers="stat_1">1 (&lt;0.1%)</td>
-<td class="gt_row gt_center" headers="stat_2">0 (0%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS175</td>
-<td class="gt_row gt_center" headers="stat_1">282 (0.6%)</td>
-<td class="gt_row gt_center" headers="stat_2">233 (0.6%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS176</td>
-<td class="gt_row gt_center" headers="stat_1">47 (&lt;0.1%)</td>
-<td class="gt_row gt_center" headers="stat_2">0 (0%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS177</td>
-<td class="gt_row gt_center" headers="stat_1">143 (0.3%)</td>
-<td class="gt_row gt_center" headers="stat_2">25 (&lt;0.1%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS186</td>
-<td class="gt_row gt_center" headers="stat_1">23 (&lt;0.1%)</td>
-<td class="gt_row gt_center" headers="stat_2">5 (&lt;0.1%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS187</td>
-<td class="gt_row gt_center" headers="stat_1">673 (1.4%)</td>
-<td class="gt_row gt_center" headers="stat_2">260 (0.7%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS188</td>
-<td class="gt_row gt_center" headers="stat_1">75 (0.2%)</td>
-<td class="gt_row gt_center" headers="stat_2">28 (&lt;0.1%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS190</td>
-<td class="gt_row gt_center" headers="stat_1">106 (0.2%)</td>
-<td class="gt_row gt_center" headers="stat_2">42 (0.1%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS193</td>
-<td class="gt_row gt_center" headers="stat_1">179 (0.4%)</td>
-<td class="gt_row gt_center" headers="stat_2">105 (0.3%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS194</td>
-<td class="gt_row gt_center" headers="stat_1">648 (1.4%)</td>
-<td class="gt_row gt_center" headers="stat_2">519 (1.3%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS195</td>
-<td class="gt_row gt_center" headers="stat_1">161 (0.3%)</td>
-<td class="gt_row gt_center" headers="stat_2">306 (0.8%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS196</td>
-<td class="gt_row gt_center" headers="stat_1">42 (&lt;0.1%)</td>
-<td class="gt_row gt_center" headers="stat_2">33 (&lt;0.1%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS201</td>
-<td class="gt_row gt_center" headers="stat_1">2 (&lt;0.1%)</td>
-<td class="gt_row gt_center" headers="stat_2">2 (&lt;0.1%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS202</td>
-<td class="gt_row gt_center" headers="stat_1">43 (&lt;0.1%)</td>
-<td class="gt_row gt_center" headers="stat_2">89 (0.2%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS203</td>
-<td class="gt_row gt_center" headers="stat_1">38 (&lt;0.1%)</td>
-<td class="gt_row gt_center" headers="stat_2">20 (&lt;0.1%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS204</td>
-<td class="gt_row gt_center" headers="stat_1">334 (0.7%)</td>
-<td class="gt_row gt_center" headers="stat_2">116 (0.3%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS205</td>
-<td class="gt_row gt_center" headers="stat_1">10 (&lt;0.1%)</td>
-<td class="gt_row gt_center" headers="stat_2">1 (&lt;0.1%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS207</td>
-<td class="gt_row gt_center" headers="stat_1">150 (0.3%)</td>
-<td class="gt_row gt_center" headers="stat_2">32 (&lt;0.1%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS210</td>
-<td class="gt_row gt_center" headers="stat_1">40 (&lt;0.1%)</td>
-<td class="gt_row gt_center" headers="stat_2">15 (&lt;0.1%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS217</td>
-<td class="gt_row gt_center" headers="stat_1">45 (&lt;0.1%)</td>
-<td class="gt_row gt_center" headers="stat_2">75 (0.2%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS218</td>
-<td class="gt_row gt_center" headers="stat_1">90 (0.2%)</td>
-<td class="gt_row gt_center" headers="stat_2">24 (&lt;0.1%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS219</td>
-<td class="gt_row gt_center" headers="stat_1">57 (0.1%)</td>
-<td class="gt_row gt_center" headers="stat_2">24 (&lt;0.1%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS220</td>
-<td class="gt_row gt_center" headers="stat_1">149 (0.3%)</td>
-<td class="gt_row gt_center" headers="stat_2">138 (0.4%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS221</td>
-<td class="gt_row gt_center" headers="stat_1">308 (0.6%)</td>
-<td class="gt_row gt_center" headers="stat_2">479 (1.2%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS222</td>
-<td class="gt_row gt_center" headers="stat_1">96 (0.2%)</td>
-<td class="gt_row gt_center" headers="stat_2">94 (0.2%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS223</td>
-<td class="gt_row gt_center" headers="stat_1">44 (&lt;0.1%)</td>
-<td class="gt_row gt_center" headers="stat_2">2 (&lt;0.1%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS224</td>
-<td class="gt_row gt_center" headers="stat_1">988 (2.1%)</td>
-<td class="gt_row gt_center" headers="stat_2">1,385 (3.6%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS226</td>
-<td class="gt_row gt_center" headers="stat_1">408 (0.9%)</td>
-<td class="gt_row gt_center" headers="stat_2">854 (2.2%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS228</td>
-<td class="gt_row gt_center" headers="stat_1">29 (&lt;0.1%)</td>
-<td class="gt_row gt_center" headers="stat_2">2 (&lt;0.1%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS229</td>
-<td class="gt_row gt_center" headers="stat_1">8 (&lt;0.1%)</td>
-<td class="gt_row gt_center" headers="stat_2">0 (0%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS230</td>
-<td class="gt_row gt_center" headers="stat_1">4 (&lt;0.1%)</td>
-<td class="gt_row gt_center" headers="stat_2">0 (0%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS232</td>
-<td class="gt_row gt_center" headers="stat_1">1,164 (2.4%)</td>
-<td class="gt_row gt_center" headers="stat_2">1,194 (3.1%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS233</td>
-<td class="gt_row gt_center" headers="stat_1">777 (1.6%)</td>
-<td class="gt_row gt_center" headers="stat_2">365 (0.9%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS234</td>
-<td class="gt_row gt_center" headers="stat_1">139 (0.3%)</td>
-<td class="gt_row gt_center" headers="stat_2">229 (0.6%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS236</td>
-<td class="gt_row gt_center" headers="stat_1">42 (&lt;0.1%)</td>
-<td class="gt_row gt_center" headers="stat_2">5 (&lt;0.1%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS239</td>
-<td class="gt_row gt_center" headers="stat_1">107 (0.2%)</td>
-<td class="gt_row gt_center" headers="stat_2">14 (&lt;0.1%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS240</td>
-<td class="gt_row gt_center" headers="stat_1">61 (0.1%)</td>
-<td class="gt_row gt_center" headers="stat_2">16 (&lt;0.1%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS241</td>
-<td class="gt_row gt_center" headers="stat_1">82 (0.2%)</td>
-<td class="gt_row gt_center" headers="stat_2">48 (0.1%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS242</td>
-<td class="gt_row gt_center" headers="stat_1">132 (0.3%)</td>
-<td class="gt_row gt_center" headers="stat_2">224 (0.6%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS243</td>
-<td class="gt_row gt_center" headers="stat_1">182 (0.4%)</td>
-<td class="gt_row gt_center" headers="stat_2">24 (&lt;0.1%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS244</td>
-<td class="gt_row gt_center" headers="stat_1">332 (0.7%)</td>
-<td class="gt_row gt_center" headers="stat_2">290 (0.7%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS245</td>
-<td class="gt_row gt_center" headers="stat_1">14 (&lt;0.1%)</td>
-<td class="gt_row gt_center" headers="stat_2">0 (0%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS247</td>
-<td class="gt_row gt_center" headers="stat_1">626 (1.3%)</td>
-<td class="gt_row gt_center" headers="stat_2">713 (1.8%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS249</td>
-<td class="gt_row gt_center" headers="stat_1">602 (1.3%)</td>
-<td class="gt_row gt_center" headers="stat_2">340 (0.9%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS251</td>
-<td class="gt_row gt_center" headers="stat_1">2 (&lt;0.1%)</td>
-<td class="gt_row gt_center" headers="stat_2">5 (&lt;0.1%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS253</td>
-<td class="gt_row gt_center" headers="stat_1">21 (&lt;0.1%)</td>
-<td class="gt_row gt_center" headers="stat_2">0 (0%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS257</td>
-<td class="gt_row gt_center" headers="stat_1">3 (&lt;0.1%)</td>
-<td class="gt_row gt_center" headers="stat_2">0 (0%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS259</td>
-<td class="gt_row gt_center" headers="stat_1">102 (0.2%)</td>
-<td class="gt_row gt_center" headers="stat_2">32 (&lt;0.1%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS260</td>
-<td class="gt_row gt_center" headers="stat_1">51 (0.1%)</td>
-<td class="gt_row gt_center" headers="stat_2">0 (0%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS262</td>
-<td class="gt_row gt_center" headers="stat_1">5 (&lt;0.1%)</td>
-<td class="gt_row gt_center" headers="stat_2">0 (0%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS265</td>
-<td class="gt_row gt_center" headers="stat_1">129 (0.3%)</td>
-<td class="gt_row gt_center" headers="stat_2">14 (&lt;0.1%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS267</td>
-<td class="gt_row gt_center" headers="stat_1">32 (&lt;0.1%)</td>
-<td class="gt_row gt_center" headers="stat_2">6 (&lt;0.1%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS271</td>
-<td class="gt_row gt_center" headers="stat_1">110 (0.2%)</td>
-<td class="gt_row gt_center" headers="stat_2">25 (&lt;0.1%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS272</td>
-<td class="gt_row gt_center" headers="stat_1">289 (0.6%)</td>
-<td class="gt_row gt_center" headers="stat_2">121 (0.3%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS273</td>
-<td class="gt_row gt_center" headers="stat_1">251 (0.5%)</td>
-<td class="gt_row gt_center" headers="stat_2">285 (0.7%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS274</td>
-<td class="gt_row gt_center" headers="stat_1">658 (1.4%)</td>
-<td class="gt_row gt_center" headers="stat_2">203 (0.5%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS276</td>
-<td class="gt_row gt_center" headers="stat_1">156 (0.3%)</td>
-<td class="gt_row gt_center" headers="stat_2">263 (0.7%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS277</td>
-<td class="gt_row gt_center" headers="stat_1">174 (0.4%)</td>
-<td class="gt_row gt_center" headers="stat_2">408 (1.0%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS278</td>
-<td class="gt_row gt_center" headers="stat_1">175 (0.4%)</td>
-<td class="gt_row gt_center" headers="stat_2">275 (0.7%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS279</td>
-<td class="gt_row gt_center" headers="stat_1">119 (0.2%)</td>
-<td class="gt_row gt_center" headers="stat_2">215 (0.6%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS281</td>
-<td class="gt_row gt_center" headers="stat_1">165 (0.3%)</td>
-<td class="gt_row gt_center" headers="stat_2">24 (&lt;0.1%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS282</td>
-<td class="gt_row gt_center" headers="stat_1">250 (0.5%)</td>
-<td class="gt_row gt_center" headers="stat_2">255 (0.7%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS283</td>
-<td class="gt_row gt_center" headers="stat_1">751 (1.6%)</td>
-<td class="gt_row gt_center" headers="stat_2">489 (1.3%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS292</td>
-<td class="gt_row gt_center" headers="stat_1">2 (&lt;0.1%)</td>
-<td class="gt_row gt_center" headers="stat_2">0 (0%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS293</td>
-<td class="gt_row gt_center" headers="stat_1">66 (0.1%)</td>
-<td class="gt_row gt_center" headers="stat_2">6 (&lt;0.1%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS294</td>
-<td class="gt_row gt_center" headers="stat_1">107 (0.2%)</td>
-<td class="gt_row gt_center" headers="stat_2">28 (&lt;0.1%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS295</td>
-<td class="gt_row gt_center" headers="stat_1">92 (0.2%)</td>
-<td class="gt_row gt_center" headers="stat_2">100 (0.3%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS296</td>
-<td class="gt_row gt_center" headers="stat_1">87 (0.2%)</td>
-<td class="gt_row gt_center" headers="stat_2">70 (0.2%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS297</td>
-<td class="gt_row gt_center" headers="stat_1">129 (0.3%)</td>
-<td class="gt_row gt_center" headers="stat_2">219 (0.6%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS299</td>
-<td class="gt_row gt_center" headers="stat_1">66 (0.1%)</td>
-<td class="gt_row gt_center" headers="stat_2">49 (0.1%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS301</td>
-<td class="gt_row gt_center" headers="stat_1">244 (0.5%)</td>
-<td class="gt_row gt_center" headers="stat_2">338 (0.9%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS303</td>
-<td class="gt_row gt_center" headers="stat_1">134 (0.3%)</td>
-<td class="gt_row gt_center" headers="stat_2">253 (0.7%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS304</td>
-<td class="gt_row gt_center" headers="stat_1">207 (0.4%)</td>
-<td class="gt_row gt_center" headers="stat_2">419 (1.1%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS306</td>
-<td class="gt_row gt_center" headers="stat_1">264 (0.6%)</td>
-<td class="gt_row gt_center" headers="stat_2">179 (0.5%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS309</td>
-<td class="gt_row gt_center" headers="stat_1">58 (0.1%)</td>
-<td class="gt_row gt_center" headers="stat_2">2 (&lt;0.1%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS310</td>
-<td class="gt_row gt_center" headers="stat_1">41 (&lt;0.1%)</td>
-<td class="gt_row gt_center" headers="stat_2">37 (&lt;0.1%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS312</td>
-<td class="gt_row gt_center" headers="stat_1">135 (0.3%)</td>
-<td class="gt_row gt_center" headers="stat_2">36 (&lt;0.1%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS313</td>
-<td class="gt_row gt_center" headers="stat_1">573 (1.2%)</td>
-<td class="gt_row gt_center" headers="stat_2">134 (0.3%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS315</td>
-<td class="gt_row gt_center" headers="stat_1">146 (0.3%)</td>
-<td class="gt_row gt_center" headers="stat_2">16 (&lt;0.1%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS316</td>
-<td class="gt_row gt_center" headers="stat_1">84 (0.2%)</td>
-<td class="gt_row gt_center" headers="stat_2">52 (0.1%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS317</td>
-<td class="gt_row gt_center" headers="stat_1">64 (0.1%)</td>
-<td class="gt_row gt_center" headers="stat_2">5 (&lt;0.1%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS320</td>
-<td class="gt_row gt_center" headers="stat_1">63 (0.1%)</td>
-<td class="gt_row gt_center" headers="stat_2">25 (&lt;0.1%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS321</td>
-<td class="gt_row gt_center" headers="stat_1">19 (&lt;0.1%)</td>
-<td class="gt_row gt_center" headers="stat_2">0 (0%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS322</td>
-<td class="gt_row gt_center" headers="stat_1">37 (&lt;0.1%)</td>
-<td class="gt_row gt_center" headers="stat_2">0 (0%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS323</td>
-<td class="gt_row gt_center" headers="stat_1">87 (0.2%)</td>
-<td class="gt_row gt_center" headers="stat_2">78 (0.2%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS324</td>
-<td class="gt_row gt_center" headers="stat_1">3 (&lt;0.1%)</td>
-<td class="gt_row gt_center" headers="stat_2">8 (&lt;0.1%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS326</td>
-<td class="gt_row gt_center" headers="stat_1">95 (0.2%)</td>
-<td class="gt_row gt_center" headers="stat_2">55 (0.1%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS328</td>
-<td class="gt_row gt_center" headers="stat_1">271 (0.6%)</td>
-<td class="gt_row gt_center" headers="stat_2">339 (0.9%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS331</td>
-<td class="gt_row gt_center" headers="stat_1">21 (&lt;0.1%)</td>
-<td class="gt_row gt_center" headers="stat_2">1 (&lt;0.1%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS333</td>
-<td class="gt_row gt_center" headers="stat_1">40 (&lt;0.1%)</td>
-<td class="gt_row gt_center" headers="stat_2">4 (&lt;0.1%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS338</td>
-<td class="gt_row gt_center" headers="stat_1">29 (&lt;0.1%)</td>
-<td class="gt_row gt_center" headers="stat_2">8 (&lt;0.1%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS355</td>
-<td class="gt_row gt_center" headers="stat_1">457 (1.0%)</td>
-<td class="gt_row gt_center" headers="stat_2">978 (2.5%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS359</td>
-<td class="gt_row gt_center" headers="stat_1">42 (&lt;0.1%)</td>
-<td class="gt_row gt_center" headers="stat_2">34 (&lt;0.1%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS360</td>
-<td class="gt_row gt_center" headers="stat_1">13 (&lt;0.1%)</td>
-<td class="gt_row gt_center" headers="stat_2">3 (&lt;0.1%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS372</td>
-<td class="gt_row gt_center" headers="stat_1">51 (0.1%)</td>
-<td class="gt_row gt_center" headers="stat_2">38 (&lt;0.1%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS373</td>
-<td class="gt_row gt_center" headers="stat_1">23 (&lt;0.1%)</td>
-<td class="gt_row gt_center" headers="stat_2">10 (&lt;0.1%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS376</td>
-<td class="gt_row gt_center" headers="stat_1">86 (0.2%)</td>
-<td class="gt_row gt_center" headers="stat_2">26 (&lt;0.1%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS378</td>
-<td class="gt_row gt_center" headers="stat_1">69 (0.1%)</td>
-<td class="gt_row gt_center" headers="stat_2">33 (&lt;0.1%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS379</td>
-<td class="gt_row gt_center" headers="stat_1">49 (0.1%)</td>
-<td class="gt_row gt_center" headers="stat_2">36 (&lt;0.1%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS382</td>
-<td class="gt_row gt_center" headers="stat_1">329 (0.7%)</td>
-<td class="gt_row gt_center" headers="stat_2">374 (1.0%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS383</td>
-<td class="gt_row gt_center" headers="stat_1">589 (1.2%)</td>
-<td class="gt_row gt_center" headers="stat_2">466 (1.2%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS384</td>
-<td class="gt_row gt_center" headers="stat_1">27 (&lt;0.1%)</td>
-<td class="gt_row gt_center" headers="stat_2">19 (&lt;0.1%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS388</td>
-<td class="gt_row gt_center" headers="stat_1">150 (0.3%)</td>
-<td class="gt_row gt_center" headers="stat_2">130 (0.3%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS389</td>
-<td class="gt_row gt_center" headers="stat_1">45 (&lt;0.1%)</td>
-<td class="gt_row gt_center" headers="stat_2">49 (0.1%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS390</td>
-<td class="gt_row gt_center" headers="stat_1">358 (0.7%)</td>
-<td class="gt_row gt_center" headers="stat_2">378 (1.0%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS391</td>
-<td class="gt_row gt_center" headers="stat_1">1,622 (3.4%)</td>
-<td class="gt_row gt_center" headers="stat_2">922 (2.4%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS392</td>
-<td class="gt_row gt_center" headers="stat_1">1,119 (2.3%)</td>
-<td class="gt_row gt_center" headers="stat_2">567 (1.5%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS393</td>
-<td class="gt_row gt_center" headers="stat_1">1 (&lt;0.1%)</td>
-<td class="gt_row gt_center" headers="stat_2">10 (&lt;0.1%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS394</td>
-<td class="gt_row gt_center" headers="stat_1">851 (1.8%)</td>
-<td class="gt_row gt_center" headers="stat_2">868 (2.2%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS399</td>
-<td class="gt_row gt_center" headers="stat_1">103 (0.2%)</td>
-<td class="gt_row gt_center" headers="stat_2">4 (&lt;0.1%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS405</td>
-<td class="gt_row gt_center" headers="stat_1">33 (&lt;0.1%)</td>
-<td class="gt_row gt_center" headers="stat_2">71 (0.2%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS407</td>
-<td class="gt_row gt_center" headers="stat_1">955 (2.0%)</td>
-<td class="gt_row gt_center" headers="stat_2">679 (1.7%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS408</td>
-<td class="gt_row gt_center" headers="stat_1">53 (0.1%)</td>
-<td class="gt_row gt_center" headers="stat_2">61 (0.2%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS412</td>
-<td class="gt_row gt_center" headers="stat_1">709 (1.5%)</td>
-<td class="gt_row gt_center" headers="stat_2">261 (0.7%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS413</td>
-<td class="gt_row gt_center" headers="stat_1">4 (&lt;0.1%)</td>
-<td class="gt_row gt_center" headers="stat_2">0 (0%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS415</td>
-<td class="gt_row gt_center" headers="stat_1">147 (0.3%)</td>
-<td class="gt_row gt_center" headers="stat_2">93 (0.2%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS416</td>
-<td class="gt_row gt_center" headers="stat_1">460 (1.0%)</td>
-<td class="gt_row gt_center" headers="stat_2">257 (0.7%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS420</td>
-<td class="gt_row gt_center" headers="stat_1">150 (0.3%)</td>
-<td class="gt_row gt_center" headers="stat_2">254 (0.7%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS423</td>
-<td class="gt_row gt_center" headers="stat_1">126 (0.3%)</td>
-<td class="gt_row gt_center" headers="stat_2">172 (0.4%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS425</td>
-<td class="gt_row gt_center" headers="stat_1">1 (&lt;0.1%)</td>
-<td class="gt_row gt_center" headers="stat_2">0 (0%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS426</td>
-<td class="gt_row gt_center" headers="stat_1">427 (0.9%)</td>
-<td class="gt_row gt_center" headers="stat_2">600 (1.5%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS427</td>
-<td class="gt_row gt_center" headers="stat_1">41 (&lt;0.1%)</td>
-<td class="gt_row gt_center" headers="stat_2">31 (&lt;0.1%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS429</td>
-<td class="gt_row gt_center" headers="stat_1">225 (0.5%)</td>
-<td class="gt_row gt_center" headers="stat_2">134 (0.3%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS431</td>
-<td class="gt_row gt_center" headers="stat_1">2 (&lt;0.1%)</td>
-<td class="gt_row gt_center" headers="stat_2">0 (0%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS433</td>
-<td class="gt_row gt_center" headers="stat_1">196 (0.4%)</td>
-<td class="gt_row gt_center" headers="stat_2">311 (0.8%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS434</td>
-<td class="gt_row gt_center" headers="stat_1">12 (&lt;0.1%)</td>
-<td class="gt_row gt_center" headers="stat_2">3 (&lt;0.1%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS436</td>
-<td class="gt_row gt_center" headers="stat_1">122 (0.3%)</td>
-<td class="gt_row gt_center" headers="stat_2">8 (&lt;0.1%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS438</td>
-<td class="gt_row gt_center" headers="stat_1">17 (&lt;0.1%)</td>
-<td class="gt_row gt_center" headers="stat_2">14 (&lt;0.1%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS457</td>
-<td class="gt_row gt_center" headers="stat_1">227 (0.5%)</td>
-<td class="gt_row gt_center" headers="stat_2">410 (1.1%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS458</td>
-<td class="gt_row gt_center" headers="stat_1">176 (0.4%)</td>
-<td class="gt_row gt_center" headers="stat_2">174 (0.4%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS461</td>
-<td class="gt_row gt_center" headers="stat_1">17 (&lt;0.1%)</td>
-<td class="gt_row gt_center" headers="stat_2">0 (0%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS469</td>
-<td class="gt_row gt_center" headers="stat_1">52 (0.1%)</td>
-<td class="gt_row gt_center" headers="stat_2">3 (&lt;0.1%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS470</td>
-<td class="gt_row gt_center" headers="stat_1">17 (&lt;0.1%)</td>
-<td class="gt_row gt_center" headers="stat_2">2 (&lt;0.1%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS474</td>
-<td class="gt_row gt_center" headers="stat_1">110 (0.2%)</td>
-<td class="gt_row gt_center" headers="stat_2">108 (0.3%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS478</td>
-<td class="gt_row gt_center" headers="stat_1">50 (0.1%)</td>
-<td class="gt_row gt_center" headers="stat_2">65 (0.2%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS486</td>
-<td class="gt_row gt_center" headers="stat_1">18 (&lt;0.1%)</td>
-<td class="gt_row gt_center" headers="stat_2">0 (0%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS494</td>
-<td class="gt_row gt_center" headers="stat_1">300 (0.6%)</td>
-<td class="gt_row gt_center" headers="stat_2">157 (0.4%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS499</td>
-<td class="gt_row gt_center" headers="stat_1">228 (0.5%)</td>
-<td class="gt_row gt_center" headers="stat_2">63 (0.2%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS513</td>
-<td class="gt_row gt_center" headers="stat_1">321 (0.7%)</td>
-<td class="gt_row gt_center" headers="stat_2">222 (0.6%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS518</td>
-<td class="gt_row gt_center" headers="stat_1">21 (&lt;0.1%)</td>
-<td class="gt_row gt_center" headers="stat_2">0 (0%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS519</td>
-<td class="gt_row gt_center" headers="stat_1">77 (0.2%)</td>
-<td class="gt_row gt_center" headers="stat_2">13 (&lt;0.1%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS520</td>
-<td class="gt_row gt_center" headers="stat_1">69 (0.1%)</td>
-<td class="gt_row gt_center" headers="stat_2">7 (&lt;0.1%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS521</td>
-<td class="gt_row gt_center" headers="stat_1">610 (1.3%)</td>
-<td class="gt_row gt_center" headers="stat_2">423 (1.1%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS600</td>
-<td class="gt_row gt_center" headers="stat_1">96 (0.2%)</td>
-<td class="gt_row gt_center" headers="stat_2">151 (0.4%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS601</td>
-<td class="gt_row gt_center" headers="stat_1">240 (0.5%)</td>
-<td class="gt_row gt_center" headers="stat_2">84 (0.2%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS603</td>
-<td class="gt_row gt_center" headers="stat_1">474 (1.0%)</td>
-<td class="gt_row gt_center" headers="stat_2">419 (1.1%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS604</td>
-<td class="gt_row gt_center" headers="stat_1">152 (0.3%)</td>
-<td class="gt_row gt_center" headers="stat_2">68 (0.2%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS605</td>
-<td class="gt_row gt_center" headers="stat_1">25 (&lt;0.1%)</td>
-<td class="gt_row gt_center" headers="stat_2">8 (&lt;0.1%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS607</td>
-<td class="gt_row gt_center" headers="stat_1">5 (&lt;0.1%)</td>
-<td class="gt_row gt_center" headers="stat_2">0 (0%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS610</td>
-<td class="gt_row gt_center" headers="stat_1">176 (0.4%)</td>
-<td class="gt_row gt_center" headers="stat_2">372 (1.0%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS611</td>
-<td class="gt_row gt_center" headers="stat_1">586 (1.2%)</td>
-<td class="gt_row gt_center" headers="stat_2">1,099 (2.8%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS612</td>
-<td class="gt_row gt_center" headers="stat_1">211 (0.4%)</td>
-<td class="gt_row gt_center" headers="stat_2">574 (1.5%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS613</td>
-<td class="gt_row gt_center" headers="stat_1">347 (0.7%)</td>
-<td class="gt_row gt_center" headers="stat_2">545 (1.4%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS620</td>
-<td class="gt_row gt_center" headers="stat_1">125 (0.3%)</td>
-<td class="gt_row gt_center" headers="stat_2">21 (&lt;0.1%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS621</td>
-<td class="gt_row gt_center" headers="stat_1">76 (0.2%)</td>
-<td class="gt_row gt_center" headers="stat_2">46 (0.1%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS622</td>
-<td class="gt_row gt_center" headers="stat_1">36 (&lt;0.1%)</td>
-<td class="gt_row gt_center" headers="stat_2">4 (&lt;0.1%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS623</td>
-<td class="gt_row gt_center" headers="stat_1">97 (0.2%)</td>
-<td class="gt_row gt_center" headers="stat_2">44 (0.1%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS624</td>
-<td class="gt_row gt_center" headers="stat_1">215 (0.4%)</td>
-<td class="gt_row gt_center" headers="stat_2">53 (0.1%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS625</td>
-<td class="gt_row gt_center" headers="stat_1">72 (0.2%)</td>
-<td class="gt_row gt_center" headers="stat_2">32 (&lt;0.1%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS626</td>
-<td class="gt_row gt_center" headers="stat_1">78 (0.2%)</td>
-<td class="gt_row gt_center" headers="stat_2">73 (0.2%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS627</td>
-<td class="gt_row gt_center" headers="stat_1">74 (0.2%)</td>
-<td class="gt_row gt_center" headers="stat_2">80 (0.2%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS628</td>
-<td class="gt_row gt_center" headers="stat_1">31 (&lt;0.1%)</td>
-<td class="gt_row gt_center" headers="stat_2">6 (&lt;0.1%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS629</td>
-<td class="gt_row gt_center" headers="stat_1">278 (0.6%)</td>
-<td class="gt_row gt_center" headers="stat_2">173 (0.4%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS632</td>
-<td class="gt_row gt_center" headers="stat_1">193 (0.4%)</td>
-<td class="gt_row gt_center" headers="stat_2">394 (1.0%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;BS633</td>
-<td class="gt_row gt_center" headers="stat_1">153 (0.3%)</td>
-<td class="gt_row gt_center" headers="stat_2">239 (0.6%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label" style="font-weight: bold">Species</td>
-<td class="gt_row gt_center" headers="stat_1"><br>
-</td>
-<td class="gt_row gt_center" headers="stat_2"><br>
-</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;Bay laurel</td>
-<td class="gt_row gt_center" headers="stat_1">16,984 (36%)</td>
-<td class="gt_row gt_center" headers="stat_2">9,209 (24%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;Redwood</td>
-<td class="gt_row gt_center" headers="stat_1">12,309 (26%)</td>
-<td class="gt_row gt_center" headers="stat_2">8,527 (22%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;Tanoak</td>
-<td class="gt_row gt_center" headers="stat_1">18,542 (39%)</td>
-<td class="gt_row gt_center" headers="stat_2">21,158 (54%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label" style="font-weight: bold">t</td>
-<td class="gt_row gt_center" headers="stat_1">6.2 (5.5)</td>
-<td class="gt_row gt_center" headers="stat_2">10.0 (5.5)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label" style="font-weight: bold">RametFail</td>
-<td class="gt_row gt_center" headers="stat_1">0 (0%)</td>
-<td class="gt_row gt_center" headers="stat_2">38,894 (100%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label" style="font-weight: bold">Disease status</td>
-<td class="gt_row gt_center" headers="stat_1">31,826 (67%)</td>
-<td class="gt_row gt_center" headers="stat_2">27,485 (71%)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label" style="font-weight: bold">Fire</td>
-<td class="gt_row gt_center" headers="stat_1">19,684 (41%)</td>
-<td class="gt_row gt_center" headers="stat_2">31,555 (81%)</td>
-</tr>
-<tr class="even">
-<td class="gt_row gt_left" headers="label" style="font-weight: bold">DBH</td>
-<td class="gt_row gt_center" headers="stat_1">9 (21)</td>
-<td class="gt_row gt_center" headers="stat_2">6 (11)</td>
-</tr>
-<tr class="odd">
-<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;Missing</td>
-<td class="gt_row gt_center" headers="stat_1">3,183</td>
-<td class="gt_row gt_center" headers="stat_2">23,821</td>
-</tr>
-</tbody><tfoot>
-<tr class="gt_footnotes odd">
-<td colspan="3" class="gt_footnote"><span class="gt_footnote_marks" style="white-space:nowrap;font-style:italic;font-weight:normal;line-height:0;"><sup>1</sup></span> Mean (SD) or Frequency (%)</td>
-</tr>
-</tfoot>
-
-</table>
-
+<div>
+<figure class="figure">
+<p><img src="analysis_files/figure-html/unnamed-chunk-8-1.png" class="img-fluid figure-img" width="672"></p>
+</figure>
 </div>
+</div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb9"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="co">#export_image(p1, "surv.png") </span></span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a><span class="fu">summary</span>(s1)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>Call: survfit(formula = Surv(t, RametFail) ~ Species, data = tree1)
+
+                Species=Bay laurel 
+ time n.risk n.event survival  std.err lower 95% CI upper 95% CI
+    0  26193     385    0.985 0.000744        0.984        0.987
+    1  22175     153    0.979 0.000919        0.977        0.980
+    3  20619    1101    0.926 0.001762        0.923        0.930
+    4  18390     121    0.920 0.001835        0.917        0.924
+    5  17616     719    0.883 0.002232        0.878        0.887
+    7  14782     143    0.874 0.002322        0.870        0.879
+    8  14053     841    0.822 0.002797        0.816        0.827
+   12  10813     265    0.802 0.002990        0.796        0.807
+   13   9872    1742    0.660 0.003940        0.652        0.668
+   15   5824    2274    0.402 0.004856        0.393        0.412
+   16   3260     891    0.292 0.004724        0.283        0.302
+   17   1218     574    0.155 0.004872        0.145        0.164
+
+                Species=Redwood 
+ time n.risk n.event survival  std.err lower 95% CI upper 95% CI
+    0  20836     315    0.985 0.000845        0.983        0.987
+    1  18513     504    0.958 0.001437        0.955        0.961
+    3  16048    1432    0.873 0.002522        0.868        0.878
+    4  13448     783    0.822 0.002957        0.816        0.828
+    7  11266     847    0.760 0.003413        0.753        0.767
+   10   8746      43    0.756 0.003443        0.750        0.763
+   12   8638    1639    0.613 0.004238        0.605        0.621
+   13   4448       1    0.613 0.004240        0.604        0.621
+   15   4444    2228    0.305 0.005058        0.296        0.316
+   16   1612     366    0.236 0.005044        0.226        0.246
+   17    760     369    0.121 0.005006        0.112        0.132
+
+                Species=Tanoak 
+ time n.risk n.event survival std.err lower 95% CI upper 95% CI
+    0  39700     656    0.983 0.00064       0.9822       0.9847
+    1  35454     570    0.968 0.00091       0.9659       0.9694
+    3  31228    3505    0.859 0.00191       0.8553       0.8628
+    4  26553    1460    0.812 0.00217       0.8076       0.8161
+    5  23687     465    0.796 0.00225       0.7915       0.8003
+    7  22547    1571    0.740 0.00249       0.7356       0.7453
+    8  18834     514    0.720 0.00257       0.7152       0.7253
+   10  17271     138    0.714 0.00260       0.7094       0.7196
+   12  16922    4281    0.534 0.00308       0.5277       0.5398
+   13  10297    1131    0.475 0.00320       0.4689       0.4814
+   15   8653    2916    0.315 0.00321       0.3088       0.3214
+   16   5691    2106    0.198 0.00286       0.1929       0.2041
+   17   2588    1845    0.057 0.00195       0.0533       0.0609</code></pre>
+</div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb11"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="fu">survdiff</span>(<span class="fu">Surv</span>(t, RametFail) <span class="sc">~</span> Species, <span class="at">data =</span> tree1)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>Call:
+survdiff(formula = Surv(t, RametFail) ~ Species, data = tree1)
+
+                       N Observed Expected (O-E)^2/E (O-E)^2/V
+Species=Bay laurel 26193     9209    12087   685.475  1249.773
+Species=Redwood    20836     8527     8479     0.276     0.442
+Species=Tanoak     39700    21158    18328   437.004  1044.174
+
+ Chisq= 1416  on 2 degrees of freedom, p= &lt;2e-16 </code></pre>
 </div>
 </div>
 </section>
-<section id="weibull-model" class="level3">
-<h3 class="anchored" data-anchor-id="weibull-model">Weibull model</h3>
+</section>
+<section id="cwd-decomposition" class="level3">
+<h3 class="anchored" data-anchor-id="cwd-decomposition">CWD Decomposition</h3>
 <div class="cell">
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb9"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a>s1 <span class="ot">&lt;-</span> <span class="fu">survfit2</span>(<span class="fu">Surv</span>(t,RametFail) <span class="sc">~</span> Species, <span class="at">data=</span>tree1)</span>
-<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a>p1 <span class="ot">&lt;-</span> s1 <span class="sc">|&gt;</span></span>
-<span id="cb9-4"><a href="#cb9-4" aria-hidden="true" tabindex="-1"></a>  <span class="fu">ggsurvfit</span>() <span class="sc">+</span></span>
-<span id="cb9-5"><a href="#cb9-5" aria-hidden="true" tabindex="-1"></a>  <span class="fu">facet_wrap</span>(<span class="sc">~</span>strata) <span class="sc">+</span></span>
-<span id="cb9-6"><a href="#cb9-6" aria-hidden="true" tabindex="-1"></a>  <span class="fu">add_risktable</span>() <span class="sc">+</span></span>
-<span id="cb9-7"><a href="#cb9-7" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_classic</span>() <span class="sc">+</span></span>
-<span id="cb9-8"><a href="#cb9-8" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">title=</span><span class="st">"Kaplan-Meier Survival Function of Big Sur Species"</span>, <span class="at">x=</span><span class="st">"Time"</span>)</span>
-<span id="cb9-9"><a href="#cb9-9" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb9-10"><a href="#cb9-10" aria-hidden="true" tabindex="-1"></a><span class="fu">export_image</span>(p1, <span class="st">"surv.png"</span>) </span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<div class="cell-output cell-output-stderr">
-<pre><code>ℹ The `add_risktable()` function is not compatible with a faceted ggplot.</code></pre>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb13"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a>cwd_decay <span class="ot">&lt;-</span> <span class="fu">read_me</span>(<span class="st">"./clean/cwd_decay.csv"</span>)</span>
+<span id="cb13-2"><a href="#cb13-2" aria-hidden="true" tabindex="-1"></a>expo_decay <span class="ot">&lt;-</span> <span class="cf">function</span>(species){</span>
+<span id="cb13-3"><a href="#cb13-3" aria-hidden="true" tabindex="-1"></a>  df <span class="ot">&lt;-</span> cwd_decay <span class="sc">|&gt;</span></span>
+<span id="cb13-4"><a href="#cb13-4" aria-hidden="true" tabindex="-1"></a>    <span class="fu">filter</span>(Species <span class="sc">==</span> species) </span>
+<span id="cb13-5"><a href="#cb13-5" aria-hidden="true" tabindex="-1"></a>  model <span class="ot">&lt;-</span> <span class="fu">nls</span>(Y <span class="sc">~</span> <span class="sc">-</span>k<span class="sc">*</span>t, <span class="at">data=</span>df, <span class="at">start=</span><span class="fu">list</span>(<span class="at">k=</span><span class="fl">0.7</span>))</span>
+<span id="cb13-6"><a href="#cb13-6" aria-hidden="true" tabindex="-1"></a>  df<span class="sc">$</span>PredictedY <span class="ot">&lt;-</span> <span class="fu">predict</span>(model)</span>
+<span id="cb13-7"><a href="#cb13-7" aria-hidden="true" tabindex="-1"></a>  summary <span class="ot">&lt;-</span> <span class="fu">summary</span>(model)</span>
+<span id="cb13-8"><a href="#cb13-8" aria-hidden="true" tabindex="-1"></a>  </span>
+<span id="cb13-9"><a href="#cb13-9" aria-hidden="true" tabindex="-1"></a>  <span class="fu">return</span>(df)</span>
+<span id="cb13-10"><a href="#cb13-10" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb13-11"><a href="#cb13-11" aria-hidden="true" tabindex="-1"></a><span class="co"># apply model function to all species</span></span>
+<span id="cb13-12"><a href="#cb13-12" aria-hidden="true" tabindex="-1"></a>species_vec <span class="ot">&lt;-</span> <span class="fu">unique</span>(cwd_decay<span class="sc">$</span>Species)</span>
+<span id="cb13-13"><a href="#cb13-13" aria-hidden="true" tabindex="-1"></a>expo_results <span class="ot">&lt;-</span> <span class="fu">map_df</span>(species_vec, expo_decay)</span>
+<span id="cb13-14"><a href="#cb13-14" aria-hidden="true" tabindex="-1"></a><span class="co"># need to prepare for visuals</span></span>
+<span id="cb13-15"><a href="#cb13-15" aria-hidden="true" tabindex="-1"></a>expo_results2 <span class="ot">&lt;-</span> expo_results <span class="sc">|&gt;</span></span>
+<span id="cb13-16"><a href="#cb13-16" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">Fire =</span> <span class="fu">as.factor</span>(Fire)) <span class="sc">|&gt;</span></span>
+<span id="cb13-17"><a href="#cb13-17" aria-hidden="true" tabindex="-1"></a>  <span class="fu">drop_na</span>() <span class="sc">|&gt;</span></span>
+<span id="cb13-18"><a href="#cb13-18" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">Burn =</span> <span class="fu">ifelse</span>(Fire <span class="sc">==</span> <span class="dv">0</span>, <span class="st">"Unburned"</span>, <span class="st">"Burned"</span>))</span>
+<span id="cb13-19"><a href="#cb13-19" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb13-20"><a href="#cb13-20" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb13-21"><a href="#cb13-21" aria-hidden="true" tabindex="-1"></a>expo_results2 <span class="sc">|&gt;</span></span>
+<span id="cb13-22"><a href="#cb13-22" aria-hidden="true" tabindex="-1"></a>  <span class="fu">ggplot</span>(<span class="fu">aes</span>(<span class="at">x=</span>t,<span class="at">y=</span>Y, <span class="at">color=</span>Burn)) <span class="sc">+</span></span>
+<span id="cb13-23"><a href="#cb13-23" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_point</span>(<span class="at">shape=</span><span class="dv">1</span>, <span class="at">size=</span><span class="fl">1.3</span>) <span class="sc">+</span></span>
+<span id="cb13-24"><a href="#cb13-24" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_line</span>(<span class="fu">aes</span>(<span class="at">x=</span>t,<span class="at">y=</span>PredictedY), <span class="at">color=</span><span class="st">"red"</span>, <span class="at">linetype=</span><span class="st">"dashed"</span>) <span class="sc">+</span></span>
+<span id="cb13-25"><a href="#cb13-25" aria-hidden="true" tabindex="-1"></a>  <span class="fu">facet_wrap</span>(<span class="sc">~</span>Species,<span class="at">scales =</span> <span class="st">"free"</span>) <span class="sc">+</span> </span>
+<span id="cb13-26"><a href="#cb13-26" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">title=</span><span class="st">"Linearized Exponential Decomposition Models for Studied Big Sur Trees"</span>, <span class="at">x=</span><span class="st">"Time (t)"</span>, <span class="at">y=</span><span class="st">""</span>, <span class="at">subtitle=</span><span class="st">"ln(Proportion of Mass Change in Year t)"</span>,</span>
+<span id="cb13-27"><a href="#cb13-27" aria-hidden="true" tabindex="-1"></a>  <span class="at">color=</span><span class="st">"Fire Status"</span>) <span class="sc">+</span></span>
+<span id="cb13-28"><a href="#cb13-28" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_classic</span>()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="analysis_files/figure-html/unnamed-chunk-9-1.png" class="img-fluid figure-img" width="672"></p>
+</figure>
+</div>
 </div>
 </div>
 </section>

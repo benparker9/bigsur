@@ -2,26 +2,45 @@
 title: "Big-sur data analysis"
 format: html
 editor: visual
+execute:
+  warning: false
+  message: false
 ---
 
-## Table of Contents:
+## [Project Hub](../index.html)  
 
+## Table of Contents:
+- [Univariate statistics of fire and disease impacts](#univariate-statistics-of-fire-and-disease-impacts)   
+- [Underlying drivers of biomass and stem density changes](#underlying-drivers-of-biomass-and-stem-density-changes)
+- [Tracking stems through time](#tracking-stems-through-time)
+
+## Objectives: quantifying fire/disease impacts   
+- Quantify biomass, stem density changes pre to post fire. Compare across burn scar, species, and status.   
+  - Used mixed effects models to understand underlying relationships.   
+- Track stems through time to quantify rates of mortality, snag fall and CWD decomposition. 
+  - Use survival analysis (mortality), ?? (snag fall), regression (CWD decomp.)    
+
+### Needed libraries   
 ```{r}
 library(tidyverse)
-library(here)
 library(broom)
 library(gtsummary)
 library(survival)
 library(ggsurvfit)
+library(lme4) 
+library(lmerTest)
+library(here)
+library(knitr)
+```    
 
-
+### Recycled functions  
+```{r}
 read_me <- function(path){
   read_csv(here("data", path))
 }
 export_image <- function(img, path){
   ggsave(filename = here("exports", path), plot=img, width=12, height=8)
 }
-
 
 grey_theme <- function() {
   theme(
@@ -49,16 +68,246 @@ grey_theme <- function() {
     legend.position = "bottom"
   )
 }
+```
+
+## Univariate statistics of fire and disease impacts 
+
+### Living Biomass changes   
+
+```{r}
+biomass_changes <- read_me("./clean/post_fire_summary.csv")
+burn_change <- function(burn, time1) {
+  df <- biomass_changes |>
+    filter(BurnScar == burn) |>
+    select(!c(Elevation,Slope,Fire)) |>
+    mutate(Pre = case_when(
+      SampleYear < time1 & SampleYear > time1-5 ~ "Pre",
+      SampleYear >= time1 & SampleYear <= time1+ 3 ~ "Post",
+      TRUE ~ "NA")) 
+  df_mod1 <- df |>
+    filter(Pre %in% c("Pre","Post")) |>
+    group_by(Plot, Species, BurnScar, PRam, Pre) |>
+    summarise(
+      TotalStem   = sum(TotalStem, na.rm = TRUE),
+      LiveBiomass = sum(LiveBiomass, na.rm = TRUE),
+      .groups = "drop"
+    ) |>
+    pivot_wider(names_from="Pre", values_from=c("TotalStem","LiveBiomass"))
+  # only want to evaluate data with both pre and post 
+  df_mod2 <- na.omit(df_mod1)
+  df_mod3 <- df_mod2 |>
+    mutate(ChangeStem = TotalStem_Post - TotalStem_Pre,
+      ChangeBiomass = LiveBiomass_Post - LiveBiomass_Pre) |>
+    select(c(1,2,3,4,9,10))
+  return(df_mod3)
+}
+# apply summary function to dataset we want
+sites_tree <- tibble(
+  burn  = c("dolan", "sober", "chalk", "control" ),
+  time1 = c(2020, 2016, 2007, 2007 )
+)
+demo_tree <- pmap_df(sites_tree, burn_change)
+
+post_fire_summary_biomass <- demo_tree |>
+  group_by(Species, BurnScar) |>
+  summarize( n = n(),
+            MeanStemChange = mean(ChangeStem, na.rm=TRUE),
+            MeanBiomassChange = mean(ChangeBiomass, na.rm=TRUE),
+            MedianStemChange    = median(ChangeStem, na.rm = TRUE),
+            MedianBiomassChange = median(ChangeBiomass, na.rm = TRUE),
+            SdStemChange = sd(ChangeStem, na.rm=TRUE),
+            SdBiomassChange = sd(ChangeBiomass, na.rm=TRUE)
+) |>
+  rename(
+         `Mean Change in Stem Density` = 3,
+     `Mean Change in Biomass` = 4,
+     `Median Change in Stem Density` = 5,
+     `Median Change in Biomass` = 6,
+  `SD Change in Stem Density` = 7,
+  `SD Change in Biomass` = 8)
+
+
+kable(post_fire_summary_biomass)
+
+```
+
+
+### CWD Biomass changes
+-- Influence of species,disease,fire on decomposition rate of CWD.    
+-- Linearized exponential decay model iterated across the species.    
+-- Aim to estimate values of k and compare between plot conditions.   
+**Questions I hope to answer**  
+How do fire, disease and species impact decomposition rates?   
+Is there a linear relationship between change in mass and time?     
+
+-- This piggy backs off earlier research conducted by Dr.Cobb. I am utilizing a known equation for [leaf litter decay](https://cdnsciencepub.com/doi/10.1139/x06-012). Results are simple linear regression, just a lot of build up.    
+-- Improvements: Split the dataset into burned/unburned, run individual models for each
+
+```{r}
+cwd_fire <- read_me("./clean/cwd_mass_change_fire.csv")
+burn_cwd_change <- function(burn, time1) {
+  df <- cwd_fire |>
+    filter(BurnScar == burn) |>
+    mutate(Time = case_when(
+      SampleYear < time1 & SampleYear > time1-5 ~ "Pre",
+      SampleYear >= time1 & SampleYear <= time1+ 3 ~ "Post",
+      TRUE ~ "NA")) 
+  df_mod1 <- df |>
+    filter(Time %in% c("Pre","Post")) |>
+    group_by(Plot, BurnScar, Time) |>
+    summarise(
+      Biomass = sum(PlotCwdMass, na.rm = TRUE)) |>
+    pivot_wider(names_from="Time", values_from="Biomass",names_expand = TRUE)
+  df_mod2 <- df_mod1 |>
+    filter(!is.na(Pre) & !is.na(Post))
+  df_mod3 <- df_mod2 |>
+    mutate(ChangeBiomass = Post - Pre) 
+  return(df_mod3)
+}
+
+sites_cwd <- tibble(
+  burn  = c("dolan", "sober",  "control" ),
+  time1 = c(2020, 2016, 2013  )
+)
+
+cwd_demo <- pmap_df(sites_cwd, burn_cwd_change)
+
+post_fire_cwd_summary <- cwd_demo |>
+  group_by(BurnScar) |>
+  summarize( n = n(),
+            MeanBiomassChange = mean(ChangeBiomass, na.rm=TRUE),
+            MedianBiomassChange = median(ChangeBiomass, na.rm = TRUE),
+            SdBiomassChange = sd(ChangeBiomass, na.rm=TRUE),
+            MinBiomassChange = min(ChangeBiomass, na.rm=TRUE),
+            MaxBiomassChange = max(ChangeBiomass, na.rm=TRUE)
+) |>
+  rename(`Burn Scar` = 1,
+          `Mean Change in Cwd Biomass` = 3,
+     `Median Change in Cwd Biomass` = 4,
+      `SD Change in Cwd Biomass` = 5,
+     `Min Change in Cwd Biomass` = 6,
+     `Max Change in Cwd Biomass` = 7) |>
+  mutate(`Burn Scar` = case_when(`Burn Scar` == "control" ~ "Control",
+                                  `Burn Scar` == "dolan" ~ "Dolan Fire",
+                                  `Burn Scar` == "sober" ~ "Sobreanes Fire"))
+
+kable(post_fire_cwd_summary)
 
 ```
 
 
 
-### Survival Analysis
-### Need to load and transform data into survival tables
-  - Create t and set t0 = 2006
+## Underlying drivers of biomass and stem density changes   
+
+### Mixed effects models   
+-- Multiple regression with mixed effects models iterated across species     
+    - Attempt to understand drivers of biomass changes. Is disease and fire interacting to reduce biomass? Is it even across species.       
+- Improvements: Run multiple models per species with different explanatory variables, take weighted AIC and weighted effects.  
+**Questions I hope to answer**  
+Which features, topographic or epidemiological, are driving biomass changes in Redwood forests?  
+Is there a linear relationship between the fixed explanatory variables and biomass?  
+
+-- P-values for fixed variables below the 0.05 threshold will allow us to reject our null hypothesis and indicate a linear relationship between a fixed explanatory variable and biomass.
+
 ```{r}
-tree <- read_me("tree_table_FINAL.csv")
+biomass <-  read_me("./clean/livebiomass_mixedmodel.csv")
+species_df <- unique(biomass$Species)
+biomass_model <- function(species){
+  df1 <- biomass |>
+    filter(Species == {{species}})
+  mixed_model <- lmer(LiveBiomass ~ PlotCwdMass + HostCwdMass + Elevation + Slope + Fire + PRam +
+                    (1|SampleYear) + (1|Plot),
+                    data=df1
+                     )
+  summary <- summary(mixed_model)
+  
+  df_summary <- as.data.frame(summary$coefficients) |>
+     mutate(Species = species)
+  df_summary$Term = rownames(df_summary)
+  return(df_summary)
+}
+
+species_models <- map_df(species_df, biomass_model)
+
+species_models2 <- species_models |>
+  rename(p = 5) |>
+  mutate(Results = ifelse(
+    p < 0.05,
+    paste0("**", round(Estimate, 3), " (", formatC(p, format = "e", digits = 2), ")**"),
+    paste0(round(Estimate, 3), " (", formatC(p, format = "e", digits = 2), ")")
+  )) |>
+  select(Species,Term,Results) |>
+  pivot_wider(names_from="Term", values_from="Results") |>
+  select(!`(Intercept)`)
+
+species_models3 <- species_models2 |>
+  rename(Disease = PRam,
+        `Plot Cwd Mass` = 2,
+        `Host Cwd Mass` = 3)
+
+kable(species_models3) 
+
+```
+
+### Logistic regression of mortality status  
+-- Multiple logistic regression iterated across species   
+    - Attempting to predict drivers of mortality given binary health status.  
+- Improvements: Use mixed effects/survival analysis instead of logistic regression.   
+**Questions I hope to answer**  
+Which features, topographic or epidemiological, are driving mortality in Redwood forests?  
+Is there a relationship between the explanatory variables and mortality?    
+
+-- P-values for fixed variables below the 0.05 threshold will allow us to reject our null hypothesis and indicate a relationship between the explanatory variables and mortality.
+
+```{r}
+mortality <-  read_me("./clean/mortality_mixedmodel.csv")
+species_mortality <- unique(mortality$Species)
+
+mortality_model <- function(species){
+  df1 <- mortality |>
+    filter(Species == {{species}})
+  logistic_model <- glm(Mortality ~ PlotCwdMass + HostCwdMass + Elevation + Slope + Fire + PRam,
+                    data=df1, family = binomial
+                     )
+  summary <- summary(logistic_model)
+  
+  df_summary <- as.data.frame(summary$coefficients) |>
+     mutate(Species = species)
+  df_summary$Term = rownames(df_summary)
+  return(df_summary)
+}
+
+mortality_results <- map_df(species_mortality, mortality_model)
+
+mortality_results2 <- mortality_results |>
+  rename(p = 4) |>
+  mutate(Results = ifelse(
+    p < 0.05,
+    paste0("**", round(Estimate, 3), " (", formatC(p, format = "e", digits = 2), ")**"),
+    paste0(round(Estimate, 3), " (", formatC(p, format = "e", digits = 2), ")")
+  )) |>
+  select(Species,Term,Results) |>
+  pivot_wider(names_from="Term", values_from="Results") |>
+  select(!`(Intercept)`)
+
+mortality_results3 <- mortality_results2 |>
+  rename(Disease = PRam,
+        `Plot Cwd Mass` = 2,
+        `Host Cwd Mass` = 3)
+
+kable(mortality_results3)
+
+```
+
+## Tracking stems through time   
+
+### Survival Analysis
+
+#### 1. Need to load and transform data into survival tables  
+  - Create t and set t0 = 2006
+
+```{r}
+tree <- read_me("./clean/tree_table_FINAL.csv")
 
 tree1 <- tree |>
   filter(Species %in% c("SESE", "LIDE","UMCA")) |> 
@@ -72,47 +321,61 @@ tree1 <- tree |>
                              TRUE ~ "Bay laurel")) |>
   select(BS_plot, Species, t,RametFail,Disease,Fire, DBH)
 
-tree1 %>% 
-  mutate(status = dplyr::recode(RametFail,"0" = "Censored", "1" = "Death")) %>% 
-  tbl_summary(by = status,
-              statistic = list(all_continuous() ~ "{mean} ({sd})", 
-                              all_categorical() ~ "{n} ({p}%)"),
-              type = list(where(is.logical) ~ "categorical"),
-              label = list(Disease ~ "Disease status", 
-                           DBH ~ "DBH", 
-                           t~"t"),
-            missing_text = "Missing") %>% 
-  modify_caption("**Table 1. Patient Characteristic**")  %>%
-  modify_header(label ~ "**Variable**") %>% 
-  modify_spanning_header(c("stat_1", "stat_2") ~ "**Survival Status**") %>%
-  modify_footnote(all_stat_cols() ~ "Mean (SD) or Frequency (%)") %>%
-  bold_labels() %>%
-  as_gt()
-
 ```
 
-### Weibull model
+#### [Kaplian - Meier](https://www.emilyzabor.com/survival-analysis-in-r.html#part-4-advanced-topics)  
 
 ```{r}
 s1 <- survfit2(Surv(t,RametFail) ~ Species, data=tree1)
 
-p1 <- s1 |>
+s1 |>
   ggsurvfit() +
   facet_wrap(~strata) +
-  add_risktable() +
   theme_classic() +
   labs(title="Kaplan-Meier Survival Function of Big Sur Species", x="Time")
 
-export_image(p1, "surv.png") 
+#export_image(p1, "surv.png") 
 
-
-
+summary(s1)
+survdiff(Surv(t, RametFail) ~ Species, data = tree1)
 
 ``` 
 
 
 
+### CWD Decomposition   
 
+```{r}
+cwd_decay <- read_me("./clean/cwd_decay.csv")
+expo_decay <- function(species){
+  df <- cwd_decay |>
+    filter(Species == species) 
+  model <- nls(Y ~ -k*t, data=df, start=list(k=0.7))
+  df$PredictedY <- predict(model)
+  summary <- summary(model)
+  
+  return(df)
+}
+# apply model function to all species
+species_vec <- unique(cwd_decay$Species)
+expo_results <- map_df(species_vec, expo_decay)
+# need to prepare for visuals
+expo_results2 <- expo_results |>
+  mutate(Fire = as.factor(Fire)) |>
+  drop_na() |>
+  mutate(Burn = ifelse(Fire == 0, "Unburned", "Burned"))
+
+
+expo_results2 |>
+  ggplot(aes(x=t,y=Y, color=Burn)) +
+  geom_point(shape=1, size=1.3) +
+  geom_line(aes(x=t,y=PredictedY), color="red", linetype="dashed") +
+  facet_wrap(~Species,scales = "free") + 
+  labs(title="Linearized Exponential Decomposition Models for Studied Big Sur Trees", x="Time (t)", y="", subtitle="ln(Proportion of Mass Change in Year t)",
+  color="Fire Status") +
+  theme_classic()
+
+```
 
 
 
