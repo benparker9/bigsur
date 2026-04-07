@@ -53,24 +53,10 @@ export_me <- function(df,path){
 plotDB <- read_me("plotDB.csv")
 # Plot Database Details 
 describe_me(plotDB)
-# For an interactive map of how many times plots were inventoried I'll need to group and clean the plotDB
-# Need to count how many times Inventoried
 plot_mod1 <- plotDB |>
   group_by(Plot) |>
   summarize(TotalTimesInventoried = n()) |>
   right_join(plotDB, by=c("Plot"))
-# Need to bin for visualization - Use of binning #1
-# Used summary(plot_mod1$TotalTimesInventoried), breaking into bins by quartile
-# Will use
-# Low visit = 1-3
-# Mid visit  = 4-5
-# Mid-high visit = 6-8
-# High visit = 9+
-# Also use of case when for radius of circle for map
-# Low visit = radius 1
-# Mid visit  = radius 3
-# Mid-high visit = radius 6
-# High visit = radius 10
 plot_mod2 <- plot_mod1 |>
   mutate(VisitFrequency = case_when(
                                     TotalTimesInventoried <= 3 ~ "Low Visit",
@@ -84,9 +70,6 @@ TRUE ~ "High Visit")) |>
         VisitFrequency =="High Visit"~ 10
 ))
 
-#Need to convert northing/easting to lat/lon
-# requires sf 
-# reference link https://r-spatial.github.io/sf/
 lat_lon <- plot_mod2 |>
     select(Plot,Easting,Northing)
 
@@ -117,12 +100,6 @@ plot_mod3 <- plot_mod2 |>
   select(!(c(Easting, Northing,VisitFrequency,Radius,TotalTimesInventoried)))
 
 # CWD Database 
-# These are raw from the UC Davis Access database.
-# Need to clean and merge tblCWD with tblCWD_samples
-# CWD_ID, Plot ID, Species w/ CWD_ID,SampleYear,Volume,DecayClass
-# Allows me to track repeated stems 
-# Join with density per species, calculate cwd mass
-# Need to keep CWD_ID, Plot,Species from tblCWD
 cwd <- read_excel(here("data","raw", "tblCWD.xlsx"))
 # rename, keep desired columns
 cwd1 <- cwd |> 
@@ -131,8 +108,6 @@ cwd1 <- cwd |>
          Species = PlantSpeciesAcronym) |>
   select(CwdId,Plot,Species)
 
-# Keep CwdId, SampleYear,DecayClass,Volume in cwd_samples
-# program stops here
 cwd_samples <- read_excel(here("data","raw", "tblCWD_Samples.xlsx"))  
 cwd_samples2 <- cwd_samples |>
   rename(CwdId = CWD_ID) |>
@@ -184,7 +159,7 @@ cwd_final4 <- cwd_final3 |>
 
 # Need total host and total plot mass per plot per year to export to the plot db for mixed models
 total_host <- cwd_final4 |>
-  filter(Species %in% c("LIDE","ARME","QUAG"))|>
+  filter(Species %in% c("LIDE","QUAG"))|>
   group_by(Plot,SampleYear) |>
   summarize(HostCwdMass = (sum(Mass,na.rm=TRUE)*20))
 plot_mass <- cwd_final4 |>
@@ -297,25 +272,34 @@ tree_mod3 <- tree_mod2 |>
 tree_biomass <- tree_mod3 |>
   filter(Status == "L") |>
   group_by(Plot,SampleYear,Species) |>
-  summarize(TotalStem = n(),
+  summarize(TotalLivingStem = n(),
             LiveBiomass = (sum(Biomass, na.rm=TRUE)*20))
+# dead host biomass
+dead_host <- tree_mod3 |>
+  filter(Species %in% c('LIDE','QUAG'),
+         !Status == "L") |>
+  group_by(Plot,SampleYear) |>
+  summarize(DeadHostBiomass = (sum(Biomass, na.rm=TRUE)*20))
+
+
+cwd_na2 <- cwd_na |>
+  left_join(dead_host, by=c('Plot','SampleYear'))
+
 # will join the above df with plot attributes for question 3
 # Need to join this with cwd_na to get studyset for mixed models, using a right join to maximize cwd data
 tree_bio_mod1 <- tree_biomass |>
-  right_join(cwd_na, by=c("Plot","SampleYear"), relationship="many-to-many")
-# 64 na's due to cwd data with no tree data, lose 23 of 112 distinct plots 
-tree_na <- tree_bio_mod1 |>
-  filter(is.na(Species))
+  right_join(cwd_na, by=c("Plot","SampleYear"), relationship="many-to-many") |>
+  right_join(dead_host, by=c("Plot","SampleYear")) |>
+  filter(!is.na(Species))
+
 # Final biomass data to export for question 1, no na's with clean column types
 tree_dtypes <- function(df){
   df <- df |>
-    filter(!is.na(Species)) |>
     mutate(across(c(PRam,Fire,BurnScar,Species), as.factor)) |>
     mutate(across(c(LiveBiomass,HostCwdMass,PlotCwdMass), as.numeric))
   return(df)
 }
 tree_bio_mod2 <- tree_dtypes(tree_bio_mod1)
-tree_bio_mod3 <- species_me(tree_bio_mod2)
 
 # Q2
 # Similar to q1 set up but predicting binary mortality 
@@ -366,7 +350,7 @@ df_ca2 <- df_ca1 |>
 
 # Exports
 # to data/clean for q 1
-export_me(tree_bio_mod3, "livebiomass_mixedmodel.csv")
+export_me(tree_bio_mod2, "livebiomass_mixedmodel.csv")
 # to data/clean for q2
 export_me(tree_mortality4, "mortality_mixedmodel.csv")
 # to data/clean for q3
@@ -379,3 +363,6 @@ export_me(cwd_repeated_species2,'cwd_decay.csv')
 export_me(df_ca2, "wiki_fire_data.csv")
 # to data/clean for q7
 export_me(plot_mod_map2,'bias.csv')
+
+export_me(cwd_na2, "cwd-mixed.csv")
+

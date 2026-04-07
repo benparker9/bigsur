@@ -1,6 +1,10 @@
 ---
 title: "Big-sur data analysis"
-format: html
+format: 
+  html: 
+    page-layout: full
+    embed-resources: true
+    code-tools: true
 editor: visual
 execute:
   warning: false
@@ -31,6 +35,7 @@ library(lme4)
 library(lmerTest)
 library(here)
 library(knitr)
+library(patchwork)
 ```    
 
 ### Recycled functions  
@@ -133,16 +138,6 @@ kable(post_fire_summary_biomass)
 
 
 ### CWD Biomass changes
--- Influence of species,disease,fire on decomposition rate of CWD.    
--- Linearized exponential decay model iterated across the species.    
--- Aim to estimate values of k and compare between plot conditions.   
-**Questions I hope to answer**  
-How do fire, disease and species impact decomposition rates?   
-Is there a linear relationship between change in mass and time?     
-
--- This piggy backs off earlier research conducted by Dr.Cobb. I am utilizing a known equation for [leaf litter decay](https://cdnsciencepub.com/doi/10.1139/x06-012). Results are simple linear regression, just a lot of build up.    
--- Improvements: Split the dataset into burned/unburned, run individual models for each
-
 ```{r}
 cwd_fire <- read_me("./clean/cwd_mass_change_fire.csv")
 burn_cwd_change <- function(burn, time1) {
@@ -209,43 +204,111 @@ Is there a linear relationship between the fixed explanatory variables and bioma
 
 -- P-values for fixed variables below the 0.05 threshold will allow us to reject our null hypothesis and indicate a linear relationship between a fixed explanatory variable and biomass.
 
+
+
+#### Plot biomass changes 
+
+- Scaling values standardizes units? Worth doing? 
+
 ```{r}
 biomass <-  read_me("./clean/livebiomass_mixedmodel.csv")
+
 species_df <- unique(biomass$Species)
-biomass_model <- function(species){
+
+big_biomass_model <- function(species){
   df1 <- biomass |>
-    filter(Species == {{species}})
-  mixed_model <- lmer(LiveBiomass ~ PlotCwdMass + HostCwdMass + Elevation + Slope + Fire + PRam +
+    filter(Species == {{species}}) |>
+    mutate(across(c(PlotCwdMass, HostCwdMass, DeadHostBiomass, 
+                  Elevation, Slope,LiveBiomass), scale))
+  tryCatch({
+    m1 <- lmer(LiveBiomass ~ PlotCwdMass + HostCwdMass + DeadHostBiomass + Elevation + Slope + Fire + PRam +
                     (1|SampleYear) + (1|Plot),
                     data=df1
-                     )
-  summary <- summary(mixed_model)
-  
-  df_summary <- as.data.frame(summary$coefficients) |>
-     mutate(Species = species)
-  df_summary$Term = rownames(df_summary)
-  return(df_summary)
+                     ) 
+    summary <- summary(m1)
+    df_summary <- as.data.frame(summary$coefficients) |>
+      mutate(Species = species,
+              AIC = AIC(m1))
+    df_summary$Term = rownames(df_summary)
+    return(df_summary)
+  }, error = function(e) {
+    message("Error", e$message)
+    return(NULL)
+  })
 }
 
-species_models <- map_df(species_df, biomass_model)
+interaction_model <- function(species){
+  df1 <- biomass |>
+    filter(Species == {{species}}) |>
+    mutate(across(c(PlotCwdMass, HostCwdMass, DeadHostBiomass, 
+                  Elevation, Slope,LiveBiomass), scale))
+  tryCatch({
+    m1 <- lmer(LiveBiomass ~ PlotCwdMass * HostCwdMass * DeadHostBiomass * Elevation * Slope * Fire * PRam +
+                    (1|SampleYear) + (1|Plot),
+                    data=df1
+                     ) 
+    summary <- summary(m1)
+    df_summary <- as.data.frame(summary$coefficients) |>
+      mutate(Species = species,
+              AIC = AIC(m1))
+    df_summary$Term = rownames(df_summary)
+    df_summary <- df_summary |>
+      filter(`Pr(>|t|)` < 0.1)
+    return(df_summary)
+  }, error = function(e) {
+    message("Error", e$message)
+    return(NULL)
+  })
+}
 
-species_models2 <- species_models |>
-  rename(p = 5) |>
-  mutate(Results = ifelse(
-    p < 0.05,
-    paste0("**", round(Estimate, 3), " (", formatC(p, format = "e", digits = 2), ")**"),
-    paste0(round(Estimate, 3), " (", formatC(p, format = "e", digits = 2), ")")
-  )) |>
-  select(Species,Term,Results) |>
-  pivot_wider(names_from="Term", values_from="Results") |>
-  select(!`(Intercept)`)
 
-species_models3 <- species_models2 |>
-  rename(Disease = PRam,
-        `Plot Cwd Mass` = 2,
-        `Host Cwd Mass` = 3)
+#cleaning function for streamlined results
+clean_me <- function(df) {
+  aic_lookup <- df |> distinct(Species, AIC)
+  df1 <- df |>
+    rename(p = 5) |>
+    mutate(Results = ifelse(
+      p < 0.05,
+      paste0("**", round(Estimate, 3), " (", formatC(p, format = "e", digits = 2), ")**"),
+      paste0(round(Estimate, 3), " (", formatC(p, format = "e", digits = 2), ")")
+    )) |>
+    select(Species,Term,Results) |>
+    pivot_wider(names_from="Term", values_from="Results") |>
+    left_join(aic_lookup, by = "Species")
+}
 
-kable(species_models3) 
+add_models <- map_df(species_df, big_biomass_model) |>
+  clean_me()
+kable(add_models) 
+
+int_models <- map_df(species_df, interaction_model) |>
+  clean_me()
+kable(int_models) 
+
+
+
+```
+
+
+- Need to evaluate other model equations, first investigate for interactions    
+
+```{r}
+int_me <- function(df,x,y,int) {
+  df |>
+    ggplot(aes(x={{x}},y={{y}},color=as.factor({{int}}),group=as.factor({{int}}))) +
+      geom_point() +
+      geom_smooth(method="lm") +
+      theme_classic()
+}
+
+p1 <- int_me(biomass,DeadHostBiomass, HostCwdMass, PRam)
+p2 <- int_me(biomass,DeadHostBiomass, Elevation, PRam)
+p3 <- int_me(biomass,Fire, LiveBiomass,PRam)
+p4 <- int_me(biomass,DeadHostBiomass, Slope, Fire)
+
+
+(p1 + p2) / (p3 + p4)
+
 
 ```
 
@@ -344,6 +407,16 @@ survdiff(Surv(t, RametFail) ~ Species, data = tree1)
 
 
 ### CWD Decomposition   
+-- Influence of species,disease,fire on decomposition rate of CWD.    
+-- Linearized exponential decay model iterated across the species.    
+-- Aim to estimate values of k and compare between plot conditions.   
+**Questions I hope to answer**  
+How do fire, disease and species impact decomposition rates?   
+Is there a linear relationship between change in mass and time?     
+
+-- This piggy backs off earlier research conducted by Dr.Cobb. I am utilizing a known equation for [leaf litter decay](https://cdnsciencepub.com/doi/10.1139/x06-012). Results are simple linear regression, just a lot of build up.    
+-- Improvements: Split the dataset into burned/unburned, run individual models for each
+
 
 ```{r}
 cwd_decay <- read_me("./clean/cwd_decay.csv")
@@ -377,6 +450,12 @@ expo_results2 |>
 
 ```
 
+### CWD Mixed Modeling  
+
+```{r}
+
+
+```
 
 
 
