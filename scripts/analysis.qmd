@@ -36,6 +36,8 @@ library(lmerTest)
 library(here)
 library(knitr)
 library(patchwork)
+library(gt)
+
 ```    
 
 ### Recycled functions  
@@ -47,32 +49,32 @@ export_image <- function(img, path){
   ggsave(filename = here("exports", path), plot=img, width=12, height=8)
 }
 
-grey_theme <- function() {
+climate_theme <- function(color = "slategray1") {
   theme(
   plot.title = element_text(
       size = 16,
       family = "Times New Roman",
-      face = "italic",
       color = "black", 
       margin = margin(b = 15)
     ),
     # add border 1)
-    panel.border = element_rect(colour = "black", fill = NA, linetype = 2),
+    panel.border = element_rect(colour = "black", fill = NA, linetype = 1),
     # color background 2)
-    panel.background = element_rect(fill = "white"),
+    panel.background = element_rect(fill = color),
     # modify grid 3)
-    panel.grid.major.x = element_line(colour = "grey", linetype = 3, linewidth = 0.5),
+    panel.grid.major.x = element_blank(),
     panel.grid.minor.x = element_blank(),
-    panel.grid.major.y =  element_line(colour = "grey", linetype = 3, linewidth = 0.5),
+    panel.grid.major.y =  element_blank(),
     panel.grid.minor.y = element_blank(),
     # modify text, axis and colour 4) and 5)
-    axis.text = element_text(colour = "black", face = "italic", family = "Times New Roman"),
+    axis.text = element_text(colour = "black",  family = "Times New Roman"),
     axis.title = element_text(colour = "black", family = "Times New Roman"),
     axis.ticks = element_line(colour = "black"),
-    # legend at the bottom 6)
-    legend.position = "bottom"
+    legend.position = "right"
   )
 }
+# darkolivegreen3
+
 ```
 
 ## Univariate statistics of fire and disease impacts 
@@ -80,14 +82,18 @@ grey_theme <- function() {
 ### Living Biomass changes   
 
 ```{r}
+#| fig-width: 14
+#| fig-height: 16
+
+
 biomass_changes <- read_me("./clean/post_fire_summary.csv")
 burn_change <- function(burn, time1) {
   df <- biomass_changes |>
     filter(BurnScar == burn) |>
     select(!c(Elevation,Slope,Fire)) |>
     mutate(Pre = case_when(
-      SampleYear < time1 & SampleYear > time1-5 ~ "Pre",
-      SampleYear >= time1 & SampleYear <= time1+ 3 ~ "Post",
+      SampleYear <= time1 ~ "Pre",
+      SampleYear >=  time1 ~ "Post",
       TRUE ~ "NA")) 
   df_mod1 <- df |>
     filter(Pre %in% c("Pre","Post")) |>
@@ -108,13 +114,13 @@ burn_change <- function(burn, time1) {
 }
 # apply summary function to dataset we want
 sites_tree <- tibble(
-  burn  = c("dolan", "sober", "chalk", "control" ),
-  time1 = c(2020, 2016, 2007, 2007 )
+  burn  = c("dolan", "sober", "chalk", "control", "dolan_chalk", "sober_chalk"),
+  time1 = c(2020, 2016, 2007, 2016, 2007, 2007)
 )
 demo_tree <- pmap_df(sites_tree, burn_change)
 
 post_fire_summary_biomass <- demo_tree |>
-  group_by(Species, BurnScar) |>
+  group_by(Species, BurnScar, PRam) |>
   summarize( n = n(),
             MeanStemChange = mean(ChangeStem, na.rm=TRUE),
             MeanBiomassChange = mean(ChangeBiomass, na.rm=TRUE),
@@ -134,18 +140,61 @@ post_fire_summary_biomass <- demo_tree |>
 
 kable(post_fire_summary_biomass)
 
+
+den <- demo_tree |>
+    ggplot(aes(x=ChangeStem, y= ChangeBiomass, color = Species, linetype = as.factor(PRam))) +
+    geom_point() +
+    geom_smooth(method = "lm", se =FALSE) +
+    climate_theme() 
+
+dis <- demo_tree |>
+    ggplot(aes(x=BurnScar, y= ChangeBiomass, color = BurnScar, fill = as.factor(PRam))) +
+    geom_boxplot() +
+    geom_jitter(shape = 21, 
+                position = position_jitterdodge(0.8)) + 
+    climate_theme() +
+    scale_color_viridis_d()
+
+dis2 <- demo_tree |>
+    ggplot(aes(x=BurnScar, y= ChangeStem, color = BurnScar, fill = as.factor(PRam))) +
+    geom_boxplot() +
+    geom_jitter(shape = 21, 
+                position = position_jitterdodge(0.8)) + 
+    climate_theme()
+dis3 <- demo_tree  |>
+    ggplot(aes(x=Species, y= ChangeBiomass, color = Species, fill = as.factor(PRam))) +
+    geom_boxplot() +
+    geom_jitter(shape = 21, 
+                position = position_jitterdodge(0.8)) + 
+    climate_theme()
+
+dis4 <- demo_tree |>
+    ggplot(aes(x=Species, y= ChangeStem, color = Species, fill = as.factor(PRam))) +
+    geom_boxplot() +
+    geom_jitter(shape = 21, 
+                position = position_jitterdodge(0.8)) + 
+    climate_theme()
+
+
+(dis + dis2) / (dis3 + dis4) / den +
+  plot_annotation(title = "Pre to Post Fire Living Tree Summary") +
+plot_layout(heights = c(1, 1, 2)) 
+
+
 ```
 
 
 ### CWD Biomass changes
 ```{r}
+
 cwd_fire <- read_me("./clean/cwd_mass_change_fire.csv")
+
 burn_cwd_change <- function(burn, time1) {
   df <- cwd_fire |>
     filter(BurnScar == burn) |>
     mutate(Time = case_when(
-      SampleYear < time1 & SampleYear > time1-5 ~ "Pre",
-      SampleYear >= time1 & SampleYear <= time1+ 3 ~ "Post",
+      SampleYear <= time1  ~ "Pre",
+      SampleYear >= time1 ~ "Post",
       TRUE ~ "NA")) 
   df_mod1 <- df |>
     filter(Time %in% c("Pre","Post")) |>
@@ -161,8 +210,8 @@ burn_cwd_change <- function(burn, time1) {
 }
 
 sites_cwd <- tibble(
-  burn  = c("dolan", "sober",  "control" ),
-  time1 = c(2020, 2016, 2013  )
+  burn  = c("dolan", "sober",  "control", "dolan_chalk", "sober_chalk"),
+  time1 = c(2020, 2016, 2016, 2009, 2009)
 )
 
 cwd_demo <- pmap_df(sites_cwd, burn_cwd_change)
@@ -181,12 +230,29 @@ post_fire_cwd_summary <- cwd_demo |>
      `Median Change in Cwd Biomass` = 4,
       `SD Change in Cwd Biomass` = 5,
      `Min Change in Cwd Biomass` = 6,
-     `Max Change in Cwd Biomass` = 7) |>
-  mutate(`Burn Scar` = case_when(`Burn Scar` == "control" ~ "Control",
-                                  `Burn Scar` == "dolan" ~ "Dolan Fire",
-                                  `Burn Scar` == "sober" ~ "Sobreanes Fire"))
+     `Max Change in Cwd Biomass` = 7) 
 
 kable(post_fire_cwd_summary)
+
+cwd_uni <- cwd_demo |>
+    ggplot(aes(x=BurnScar, y= ChangeBiomass, color = BurnScar)) +
+    geom_boxplot(show.legend = FALSE) +
+    geom_jitter(show.legend = FALSE) + 
+    climate_theme() +
+    labs(title= "Pre to Post Fire CWD Changes")
+
+print(cwd_uni)
+# anova testing
+anov <- aov(ChangeBiomass ~ BurnScar, data = cwd_demo)
+print(summary(anov))
+print(TukeyHSD(anov))
+norm <- cwd_demo |>
+  ggplot(aes(x=ChangeBiomass)) +
+  geom_histogram() +
+  climate_theme() +
+  labs(title = "Distribution of Response Var")
+print(norm)
+
 
 ```
 
@@ -252,8 +318,6 @@ interaction_model <- function(species){
       mutate(Species = species,
               AIC = AIC(m1))
     df_summary$Term = rownames(df_summary)
-    df_summary <- df_summary |>
-      filter(`Pr(>|t|)` < 0.1)
     return(df_summary)
   }, error = function(e) {
     message("Error", e$message)
@@ -277,28 +341,37 @@ clean_me <- function(df) {
     left_join(aic_lookup, by = "Species")
 }
 
+
+```
+
+**This model uses all potential variables found to date with no interactions.**   
+
+```{r}
 add_models <- map_df(species_df, big_biomass_model) |>
   clean_me()
 kable(add_models) 
 
-int_models <- map_df(species_df, interaction_model) |>
-  clean_me()
-kable(int_models) 
-
-
-
 ```
 
 
-- Need to evaluate other model equations, first investigate for interactions    
+**This model uses all potential variables found to date and allows for all possible interactions. Used to find interactions.**       
 
 ```{r}
+int_models <- map_df(species_df, interaction_model) |>
+  clean_me()
+kable(int_models) 
+```
+
+```{r}
+#| fig-width: 12 
+#| fig-height: 14
+
 int_me <- function(df,x,y,int) {
   df |>
     ggplot(aes(x={{x}},y={{y}},color=as.factor({{int}}),group=as.factor({{int}}))) +
       geom_point() +
       geom_smooth(method="lm") +
-      theme_classic()
+      climate_theme()
 }
 
 p1 <- int_me(biomass,DeadHostBiomass, HostCwdMass, PRam)
@@ -311,6 +384,61 @@ p4 <- int_me(biomass,DeadHostBiomass, Slope, Fire)
 
 
 ```
+
+**Other interactions to graph?**    
+
+**This model uses an interaction between HostCwdMass, DeadHostBiomass, Fire and disease.**       
+
+```{r}
+disease_model <- function(species){
+  df1 <- biomass |>
+    filter(Species == {{species}}) |>
+    mutate(across(c(PlotCwdMass, HostCwdMass, DeadHostBiomass, 
+                  Elevation, Slope,LiveBiomass), scale))
+  tryCatch({
+    m1 <- lmer(LiveBiomass ~ PlotCwdMass + HostCwdMass * DeadHostBiomass * Fire * PRam + Elevation * Slope +
+                    (1|SampleYear) + (1|Plot),
+                    data=df1
+                     ) 
+    summary <- summary(m1)
+    df_summary <- as.data.frame(summary$coefficients) |>
+      mutate(Species = species,
+              AIC = AIC(m1))
+    df_summary$Term = rownames(df_summary)
+    return(df_summary)
+  }, error = function(e) {
+    message("Error", e$message)
+    return(NULL)
+  })
+}
+
+disease_models <- map_df(species_df, disease_model) |>
+  clean_me()
+kable(disease_models) 
+
+```
+
+**How do the three models compare in AIC?**
+
+```{r}
+model_comp <- bind_rows(
+  add_models |> mutate(Model = "Simple Model"),
+  int_models |> mutate(Model = "Full Interaction Model"),
+  disease_models |> mutate(Model = "Disease/Fire Interaction Model")
+) |> 
+  select(Model, Species, AIC) |>
+  pivot_wider(names_from = Species, values_from = AIC) |>
+  gt()
+
+model_comp
+
+```
+
+
+
+
+
+
 
 ### Logistic regression of mortality status  
 -- Multiple logistic regression iterated across species   
