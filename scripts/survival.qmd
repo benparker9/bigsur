@@ -1,0 +1,159 @@
+---
+format: 
+  html:
+    toc: true 
+editor: visual
+execute:
+  warning: false
+  message: false
+---
+### Needed libraries   
+```{r}
+library(tidyverse)
+library(broom)
+library(gtsummary)
+library(survival)
+library(ggsurvfit)
+library(lme4) 
+library(lmerTest)
+library(here)
+library(knitr)
+library(patchwork)
+library(gt)
+
+```    
+
+### Recycled functions  
+```{r}
+read_me <- function(path){
+  read_csv(here("data", path))
+}
+export_image <- function(img, path){
+  ggsave(filename = here("exports", path), plot=img, width=12, height=8)
+}
+
+climate_theme <- function(color = "slategray1") {
+  theme(
+  plot.title = element_text(
+      size = 16,
+      family = "Times New Roman",
+      color = "black", 
+      margin = margin(b = 15)
+    ),
+    # add border 1)
+    panel.border = element_rect(colour = "black", fill = NA, linetype = 1),
+    # color background 2)
+    panel.background = element_rect(fill = color),
+    # modify grid 3)
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor.x = element_blank(),
+    panel.grid.major.y =  element_blank(),
+    panel.grid.minor.y = element_blank(),
+    # modify text, axis and colour 4) and 5)
+    axis.text = element_text(colour = "black",  family = "Times New Roman"),
+    axis.title = element_text(colour = "black", family = "Times New Roman"),
+    axis.ticks = element_line(colour = "black"),
+    legend.position = "right"
+  )
+}
+# darkolivegreen3
+
+```
+
+### Logistic regression of mortality status  
+-- Multiple logistic regression iterated across species   
+    - Attempting to predict drivers of mortality given binary health status.  
+- Improvements: Use mixed effects/survival analysis instead of logistic regression.   
+**Questions I hope to answer**  
+Which features, topographic or epidemiological, are driving mortality in Redwood forests?  
+Is there a relationship between the explanatory variables and mortality?    
+
+-- P-values for fixed variables below the 0.05 threshold will allow us to reject our null hypothesis and indicate a relationship between the explanatory variables and mortality.
+
+```{r}
+mortality <-  read_me("./clean/mortality_mixedmodel.csv")
+species_mortality <- unique(mortality$Species)
+
+mortality_model <- function(species){
+  df1 <- mortality |>
+    filter(Species == {{species}})
+  logistic_model <- glm(Mortality ~ PlotCwdMass + HostCwdMass + Elevation + Slope + Fire + PRam,
+                    data=df1, family = binomial
+                     )
+  summary <- summary(logistic_model)
+  
+  df_summary <- as.data.frame(summary$coefficients) |>
+     mutate(Species = species)
+  df_summary$Term = rownames(df_summary)
+  return(df_summary)
+}
+
+mortality_results <- map_df(species_mortality, mortality_model)
+
+mortality_results2 <- mortality_results |>
+  rename(p = 4) |>
+  mutate(Results = ifelse(
+    p < 0.05,
+    paste0("**", round(Estimate, 3), " (", formatC(p, format = "e", digits = 2), ")**"),
+    paste0(round(Estimate, 3), " (", formatC(p, format = "e", digits = 2), ")")
+  )) |>
+  select(Species,Term,Results) |>
+  pivot_wider(names_from="Term", values_from="Results") |>
+  select(!`(Intercept)`)
+
+mortality_results3 <- mortality_results2 |>
+  rename(Disease = PRam,
+        `Plot Cwd Mass` = 2,
+        `Host Cwd Mass` = 3)
+
+kable(mortality_results3)
+
+```
+
+## Tracking stems through time   
+
+### Survival Analysis
+
+#### 1. Need to load and transform data into survival tables  
+  - Create t and set t0 = 2006
+
+```{r}
+tree <- read_me("./clean/tree_table_FINAL.csv")
+
+tree1 <- tree |>
+  filter(Species %in% c("SESE", "LIDE","UMCA")) |> 
+  rename(Disease = p_ram.presence,
+         Fire = fire_presence) |>
+  filter(!is.na(Species)) |>
+  mutate(t = SampleYear - 2006,
+         Species = case_when(
+                             Species == "SESE" ~ "Redwood",
+                             Species == "LIDE" ~ "Tanoak",
+                             TRUE ~ "Bay laurel")) |>
+  select(BS_plot, Species, t,RametFail,Disease,Fire, DBH)
+
+```
+
+#### [Kaplian - Meier](https://www.emilyzabor.com/survival-analysis-in-r.html#part-4-advanced-topics)  
+
+```{r}
+s1 <- survfit2(Surv(t,RametFail) ~ Species, data=tree1)
+
+s1 |>
+  ggsurvfit() +
+  facet_wrap(~strata) +
+  theme_classic() +
+  labs(title="Kaplan-Meier Survival Function of Big Sur Species", x="Time")
+
+#export_image(p1, "surv.png") 
+
+summary(s1)
+survdiff(Surv(t, RametFail) ~ Species, data = tree1)
+
+``` 
+
+
+
+
+
+
