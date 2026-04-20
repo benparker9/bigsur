@@ -1,0 +1,20 @@
+project:
+  type: website
+
+website:
+  title: "Big Sur SOD Analysis"
+  search: true
+  navbar:
+    left:
+      - text: "Project Notes"
+        href: ./project_notes.qmd
+      - text: "Analysis"
+        href: ./index.qmd
+      - text: "Data Download"
+        href: https://github.com/benparker9/bigsur/tree/master/data
+format:
+  html:
+    page-layout: full
+
+
+
