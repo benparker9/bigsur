@@ -1,0 +1,33 @@
+project:
+  type: website
+  output-dir: .
+
+website:
+  title: "Big Sur SOD Analysis"
+  search: true
+  navbar:
+    left:
+      - text: "Project Notes"
+        href: ./project_notes.qmd
+      - text: "Plot"
+        href: ./plot.qmd
+      - text: "Biomass"
+        href: ./index.qmd
+      - text: "Survival Analysis"
+        href: ./survival.qmd
+      - text: "CWD"
+        href: ./cwd.qmd
+      - text: "Cleaning"
+        href: ./clean.qmd
+      - text: "Data Download"
+        href: https://github.com/benparker9/bigsur/tree/master/scripts/data
+format:
+  html:
+    page-layout: full
+    code-tools: true
+    embed-resources: true
+    theme: superhero 
+
+
+
+

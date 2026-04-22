@@ -1,0 +1,174 @@
+---
+format: 
+  html:
+    toc: true 
+editor: visual
+execute:
+  warning: false
+  message: false
+---
+
+### Needed libraries   
+```{r}
+library(tidyverse)
+library(here)
+library(readxl)
+library(sf)
+library(leaflet)
+```    
+
+```{r}
+#speed up importing data
+read_me <- function(path, status){
+  read.csv(here("data",status, path))
+}
+# speed up export to data/clean
+export_me <- function(df,path){
+  write.csv(df, here("data","clean", path))
+}
+
+```
+
+
+```{r}
+bias <- read_me("bias.csv", "clean")  
+z_score <- function(df,x){
+  df1 <- df |>
+    summarize(
+      pop_mean <- mean({{x}}, na.rm=TRUE),
+      pop_sd <- sd({{x}}, na.rm=TRUE)) |>
+        rename(Mean = 1, Sd = 2) 
+  df <- df |>
+    mutate(ZScore = ({{x}} - df1$Mean)/ df1$Sd)
+  return(df)
+}
+#sd = 2.311 mean=3.21 
+# plotted bias histogram to verify Poisson distribution
+bias_mod1 <- z_score(bias, TotalTimesInventoried)
+
+# simulate poisson distribution 280 total, mean of 3.2
+set.seed(331)
+sim <- data.frame(Simulated = rpois(280,3.2)) 
+sim_mod1 <- z_score(sim,Simulated)
+
+# simulated zscore dataset is slightly right skewed, project dataset is heavily right skewed
+# simulated zscore dataset has no values over ~3 while project dataset has values near 4
+# radius is built on times inventoried
+# color will be built on z-score
+# project dataset, if z-score < -0.5 they get green
+# if z-score > 3 they get red
+# use of binning 3
+bias_mod2 <- bias_mod1 |>
+  mutate(Color = case_when(
+                           ZScore < -0.5 ~ "Green",
+                           ZScore > 2.75 ~ "Red",
+                           TRUE ~ "Blue"
+                           ))
+#export_me(bias_mod2, "q7-map.csv")
+
+# need this for .docx render
+bias_hist <- bias_mod1 |>
+  select(TotalTimesInventoried, ZScore) |>
+  rename(Count = TotalTimesInventoried) |>
+  mutate(Dataset = "Tree") 
+
+sim_hist <- sim_mod1 |>
+  rename(Count = Simulated) |>
+  mutate(Dataset = "Simulated")
+comp_hist <- bind_rows(bias_hist,sim_hist)
+
+
+```
+
+
+```{r}
+map <- bias_mod2
+
+leaflet(map) %>%
+  addTiles() %>%
+  addProviderTiles(providers$Esri.WorldImagery) %>%
+  setView(lng = mean(map$Lon), lat = mean(map$Lat), zoom = 9) %>%
+  addCircleMarkers(
+    lng = ~Lon,
+    lat = ~Lat,
+    radius = ~Radius * 1.2,  # scale up for visibility
+    label = ~Plot,
+    popup = ~paste0(
+      "<b>Plot:</b> ", Plot, "<br>",
+      "<b>Times Inventoried:</b> ", TotalTimesInventoried, "<br>",
+      "<b>Visit Frequency:</b> ", VisitFrequency
+    ),
+    color = ~Color,
+    fillOpacity = 0.7
+  ) |>
+  addControl(
+    html = "<b style='font-size:12px;'>Bias in Sampling Frequency</b>",
+    position = "topright"
+  ) 
+  #|>
+    #htmlwidgets::saveWidget("")
+
+```
+
+
+
+```{r}
+#CePlot 0=has ever had veg cov class <10%; 1= >10%; 2= >25%)
+raw_plot <- read_me('raw_plotDB.csv', 'raw') |>
+  slice(-1) |>
+  select(1,2, 5, 40, 63, 64) |>
+  rename(PlotBS = 2,
+         ForestType = 3,
+         CePlot = 4,
+         PlotAspect = 5,
+         OverallAspect = 6)
+ 
+plot <- read_me('plotDB.csv', 'raw')
+
+plotDB <- left_join(raw_plot, plot, by = c("PlotBS" = "Plot"), relationship = "many-to-many") |>
+  mutate(across(c(Plot, ForestType, PlotAspect, OverallAspect), as.numeric))
+
+```
+
+## Principle Component Analysis     
+
+**Objective**   
+- Better understand variability within the plot dataset   
+- Add groups beyond Plot ID to test as random factors 
+
+
+
+```{r}
+# only numeric cols, will auto scale, center and return transformed data
+
+pca_me <- function(df) {
+  df1 <- df |>
+    select(!CePlot) |>
+    select(where(is.numeric)) |>
+    drop_na() 
+  pca <- prcomp(df1, scale. = TRUE, center = TRUE, retx = TRUE)
+  
+  pca_var <- pca$sdev^2
+  propve <- pca_var / sum(pca_var)
+
+  j <- plot(propve, xlab = "Principal Component",
+     ylab = "Proportion of Variance Explained",
+     ylim = c(0, 1), type = "b", main = "Scree Plot")
+  
+  return(j)
+}
+
+
+pca_me(plotDB)
+
+
+```
+
+
+
+
+
+
+
+
+
