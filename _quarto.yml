@@ -8,11 +8,11 @@ website:
   navbar:
     left:
       - text: "Project Notes"
-        href: ./project_notes.qmd
-      - text: "Plot"
+        href: ./index.qmd
+      - text: "Exploration"
         href: ./plot.qmd
       - text: "Biomass"
-        href: ./index.qmd
+        href: ./biomass.qmd
       - text: "Survival Analysis"
         href: ./survival.qmd
       - text: "CWD"
@@ -26,7 +26,10 @@ format:
     page-layout: full
     code-tools: true
     embed-resources: true
-    theme: superhero 
+    theme: superhero
+
+resources:
+  - red.mp4
 
 
 
