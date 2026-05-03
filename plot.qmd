@@ -114,19 +114,68 @@ leaflet(map) %>%
 
 ```{r}
 #CePlot 0=has ever had veg cov class <10%; 1= >10%; 2= >25%)
+
 raw_plot <- read_me('raw_plotDB.csv', 'raw') |>
   slice(-1) |>
-  select(1,2, 5, 40, 63, 64) |>
+  select(1,2, 5, 27, 40, 50, 51, 63, 64) |>
   rename(PlotBS = 2,
          ForestType = 3,
-         CePlot = 4,
-         PlotAspect = 5,
-         OverallAspect = 6)
- 
+         YearsBurned = 4,
+         CePlot = 5,
+         Trail = 6,
+         Owner = 7,
+         PlotAspect = 8,
+         OverallAspect = 9) |>
+  separate_wider_delim(YearsBurned, delim = ",", names_sep = "_", 
+                       too_few = "align_start") |>
+  pivot_longer(cols = YearsBurned_1:YearsBurned_6, names_to = "Year", 
+               values_to = "YearBurned") |>
+  mutate(YearBurned = str_trim(YearBurned)) |>
+  drop_na(YearBurned)
+
 plot <- read_me('plotDB.csv', 'raw')
 
 plotDB <- left_join(raw_plot, plot, by = c("PlotBS" = "Plot"), relationship = "many-to-many") |>
-  mutate(across(c(Plot, ForestType, PlotAspect, OverallAspect), as.numeric))
+  separate_wider_delim(YearBurned, delim = " ", names_sep = "_",
+                       too_few = "align_start") |>
+  pivot_longer(cols = YearBurned_1:YearBurned_2, names_to = "trans", values_to = "YearBurned") |>
+  drop_na(YearBurned, BurnScar) |>
+  select(!c(Year, trans)) |>
+  mutate(YearBurned = case_when(
+         YearBurned %in% c("none", "") ~ "0",
+         TRUE ~ YearBurned
+       )) |>
+  mutate(across(c(Plot, ForestType, PlotAspect, OverallAspect, YearBurned), as.numeric)) 
+
+#plot_t <- plotDB |>
+#  select(PlotBS, YearBurned, BurnScar) |>
+#  distinct() |>
+#  filter(BurnScar == "dolan") |>
+#  group_by(PlotBS, BurnScar) |>
+#  summarize(YearBurnedSecondMax = nth(sort(YearBurned, decreasing = TRUE), 2),
+#            YearBurnedMax = max(YearBurned))
+#
+## time since fire calcs
+#recent <- plotDB |>
+#  mutate(tFire = case_when(
+#                           BurnScar == "dolan" & SampleYear >= 2020 ~ SampleYear - 2020,
+#                           BurnScar == "dolan" & SampleYear < 2020 ~ SampleYear - YearBurnedMax,
+#                           BurnScar == "dolan_chalk" & SampleYear >= 2020 ~ SampleYear - 2020,
+#                           BurnScar == "dolan_chalk" & SampleYear < 2020 & SampleYear > 2008 ~ SampleYear - 2008,
+#                          BurnScar == "dolan_chalk" & SampleYear <= 2016 ~ SampleYear - YearBurnedSecondMax,
+#                           BurnScar == "sober" & SampleYear > 2016 ~ SampleYear - 2016,
+#                           BurnScar == "sober" & SampleYear <= 2016 ~ SampleYear - YearBurned,
+#                           BurnScar == "sober_chalk" & SampleYear >= 2016 ~ SampleYear - 2016,
+#                           BurnScar == "sober_chalk" & SampleYear < 2016 & SampleYear > 2008 ~ SampleYear - 2008,
+#                            BurnScar == "sober_chalk" & SampleYear <= 2008 ~ SampleYear - YearBurned,
+#                            BurnScar == "chalk" & SampleYear > 2008 ~ SampleYear - 2008,
+#                          BurnScar == "chalk" & SampleYear <= 2008 ~ SampleYear - YearBurned,
+#                          BurnScar == "control" ~ SampleYear - YearBurned)) |>
+#  filter(tFire <= 0) |>
+#  select(PlotBS, BurnScar, SampleYear, YearBurned, tFire) 
+#
+
+
 
 ```
 
@@ -135,6 +184,57 @@ plotDB <- left_join(raw_plot, plot, by = c("PlotBS" = "Plot"), relationship = "m
 **Objective**   
 - Better understand variability within the plot dataset   
 - Add groups beyond Plot ID to test as random factors 
+
+
+**Covariance Matrix**   
+
+```{r}
+library(corrr)
+make_titles <- function(x){
+  # expects a character or factor as an input
+  stopifnot(is.character(x) | is.factor(x))
+  
+  # remove the units at the end of the name
+  str_remove(x, pattern = "(g|mm)$") |> 
+  # replace all _ with spaces
+  str_replace_all(pattern = "_", replacement = " ") |> 
+  # remove extra whitespace on left 
+  str_trim(side = "both") |> 
+  # convert the first letter of each word to upper case
+  str_to_title()
+}
+
+cor_matrix <- function(df, title) {
+  df |>
+    select(where(is.numeric)) |>
+    correlate(method = "pearson",
+            use = "pairwise.complete.obs") |>
+    rename(term1 = term) |> 
+    pivot_longer(cols = -term1, 
+               names_to = "term2", 
+               values_to = "correlation") |>
+    mutate(
+      across(.cols = c(term1, term2), 
+           .fns = ~ make_titles(.x)
+           )
+    ) |> 
+    ggplot(mapping = aes(x = term1,
+                       y = term2, 
+                       fill = correlation)) +
+      geom_tile() +
+      labs(x = "", 
+       y = "", 
+       title = paste("Correlation Matrix of:", title), 
+       fill = "Correlation"
+       ) +
+      theme_bw() +
+      scale_fill_viridis_c(option = "B")
+
+}
+
+cor_matrix(plotDB, "Plot Factors")
+
+```
 
 
 
