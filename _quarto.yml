@@ -27,6 +27,8 @@ format:
     code-tools: true
     embed-resources: true
     theme: superhero
+    code-fold: true
+
 
 resources:
   - red.mp4

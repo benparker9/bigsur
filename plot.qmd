@@ -1,7 +1,7 @@
 ---
 format: 
   html:
-    toc: true 
+    toc: true
 editor: visual
 execute:
   warning: false
@@ -147,48 +147,61 @@ plotDB <- left_join(raw_plot, plot, by = c("PlotBS" = "Plot"), relationship = "m
        )) |>
   mutate(across(c(Plot, ForestType, PlotAspect, OverallAspect, YearBurned), as.numeric)) 
 
-#plot_t <- plotDB |>
-#  select(PlotBS, YearBurned, BurnScar) |>
-#  distinct() |>
-#  filter(BurnScar == "dolan") |>
-#  group_by(PlotBS, BurnScar) |>
-#  summarize(YearBurnedSecondMax = nth(sort(YearBurned, decreasing = TRUE), 2),
-#            YearBurnedMax = max(YearBurned))
-#
+
+plot_t <- plotDB |>
+  select(PlotBS, SampleYear, YearBurned, BurnScar) |>
+  distinct() |>
+  group_by(PlotBS, SampleYear, BurnScar) |>
+  summarize(YearBurnedThirdMax = nth(sort(YearBurned, decreasing = TRUE), 3),
+            YearBurnedSecondMax = nth(sort(YearBurned, decreasing = TRUE), 2),
+            YearBurnedMax = max(YearBurned))
+
 ## time since fire calcs
-#recent <- plotDB |>
-#  mutate(tFire = case_when(
-#                           BurnScar == "dolan" & SampleYear >= 2020 ~ SampleYear - 2020,
-#                           BurnScar == "dolan" & SampleYear < 2020 ~ SampleYear - YearBurnedMax,
-#                           BurnScar == "dolan_chalk" & SampleYear >= 2020 ~ SampleYear - 2020,
-#                           BurnScar == "dolan_chalk" & SampleYear < 2020 & SampleYear > 2008 ~ SampleYear - 2008,
-#                          BurnScar == "dolan_chalk" & SampleYear <= 2016 ~ SampleYear - YearBurnedSecondMax,
-#                           BurnScar == "sober" & SampleYear > 2016 ~ SampleYear - 2016,
-#                           BurnScar == "sober" & SampleYear <= 2016 ~ SampleYear - YearBurned,
-#                           BurnScar == "sober_chalk" & SampleYear >= 2016 ~ SampleYear - 2016,
-#                           BurnScar == "sober_chalk" & SampleYear < 2016 & SampleYear > 2008 ~ SampleYear - 2008,
-#                            BurnScar == "sober_chalk" & SampleYear <= 2008 ~ SampleYear - YearBurned,
-#                            BurnScar == "chalk" & SampleYear > 2008 ~ SampleYear - 2008,
-#                          BurnScar == "chalk" & SampleYear <= 2008 ~ SampleYear - YearBurned,
-#                          BurnScar == "control" ~ SampleYear - YearBurned)) |>
-#  filter(tFire <= 0) |>
-#  select(PlotBS, BurnScar, SampleYear, YearBurned, tFire) 
-#
+recent <- plot_t |>
+  mutate(tFire = case_when(
+                           BurnScar == "dolan" & SampleYear >= 2020 ~ SampleYear - 2020,
+                           BurnScar == "dolan" & SampleYear < 2020 ~ SampleYear - YearBurnedMax,
+                           BurnScar == "dolan_chalk" & SampleYear >= 2020 ~ SampleYear - 2020,
+                           BurnScar == "dolan_chalk" & SampleYear < 2020 & SampleYear >= 2008 ~ SampleYear - 2008,
+                          BurnScar == "dolan_chalk" & SampleYear < 2008 ~ SampleYear - YearBurnedSecondMax,
+                           BurnScar == "sober" & SampleYear >= 2016 ~ SampleYear - 2016,
+                           BurnScar == "sober" & SampleYear < 2016 ~ SampleYear - YearBurnedSecondMax,
+                           BurnScar == "sober_chalk" & SampleYear >= 2016 ~ SampleYear - 2016,
+                           BurnScar == "sober_chalk" & SampleYear < 2016 & SampleYear >= 2008 ~ SampleYear - 2008,
+                            BurnScar == "sober_chalk" & SampleYear < 2008 ~ SampleYear - YearBurnedThirdMax,
+                            BurnScar == "chalk" & SampleYear >= 2008 ~ SampleYear - 2008,
+                          BurnScar == "chalk" & SampleYear < 2008 ~ SampleYear - YearBurnedSecondMax,
+                          BurnScar == "control" ~ SampleYear - YearBurnedMax)) |>
+    select(PlotBS, BurnScar, SampleYear, tFire, YearBurnedMax, YearBurnedSecondMax, YearBurnedThirdMax) 
 
+# 56 unique plots with only one burn date, unburnt before? 
+na <- recent |>
+  filter(is.na(tFire)) 
 
+#4 -t values - control group burn years in 2013, entry error?
+plotDB2 <- recent |>
+  filter(!is.na(tFire) &
+         tFire > 0) |> 
+  select(PlotBS, SampleYear, tFire)
+
+plot_meta <- left_join(plotDB, plotDB2, by = c("PlotBS", "SampleYear"))
 
 ```
 
 ## Principle Component Analysis     
 
 **Objective**   
-- Better understand variability within the plot dataset   
+- Better understand variability within each dataset  
 - Add groups beyond Plot ID to test as random factors 
 
 
-**Covariance Matrix**   
+**Plot Dataset**   
 
 ```{r}
+#| fig-width: 18
+#| fig-height: 8
+
+
 library(corrr)
 make_titles <- function(x){
   # expects a character or factor as an input
@@ -232,17 +245,20 @@ cor_matrix <- function(df, title) {
 
 }
 
-cor_matrix(plotDB, "Plot Factors")
+cor_matrix(plot_meta, "Plot Qualitative Variables")
 
 ```
 
 
 
 ```{r}
-# only numeric cols, will auto scale, center and return transformed data
+#| fig-width: 18
+#| fig-height: 10
 
+# only numeric cols, will auto scale, center and return transformed data
 pca_me <- function(df) {
   df1 <- df |>
+    ungroup() |>
     select(!CePlot) |>
     select(where(is.numeric)) |>
     drop_na() 
@@ -250,20 +266,149 @@ pca_me <- function(df) {
   
   pca_var <- pca$sdev^2
   propve <- pca_var / sum(pca_var)
+  print(summary(pca))
 
-  j <- plot(propve, xlab = "Principal Component",
+  par(mfrow = c(1,2))
+  plot(propve, xlab = "Principal Component",
      ylab = "Proportion of Variance Explained",
      ylim = c(0, 1), type = "b", main = "Scree Plot")
+ 
+  biplot(pca, xlabs=rep("", nrow(df1))) 
   
-  return(j)
 }
 
 
-pca_me(plotDB)
+pca_me(plot_meta)
 
 
 ```
 
+
+**Tree Dataset**
+
+```{r}
+#| fig-width: 18
+#| fig-height: 10
+
+
+tree <- read.csv('./data/clean/tree_table_FINAL.csv') |>
+  rename(PlotBS = BS_plot,
+         StemId = StemID,
+         BasalArea = BasalArea.Plot) |>
+  select(PlotBS, SampleYear, Species, StemId, GenetId, RametId, HealthClass, Status,
+         DBH, BasalArea, RametFail, GenetFail) |>
+  left_join(plot_meta, by = c("PlotBS", "SampleYear"), relationship = "many-to-many")
+
+# Need to quantify biomass, use allometric equations to convert DBH into biomass (kg C)
+#allometric equations https://www.fs.usda.gov/nrs/pubs/jrnl/2014/nrs_2014_chojnacky_001.pdf
+# equation is biomass(kg) = exp(b0 + b1 * log(DBH)) 
+eq <- function(b0,b1,DBH){
+  exp(b0+b1*log(DBH))
+}
+
+tree2 <- tree |>
+  mutate(Species = str_replace(Species,"quag", "QUAG")) |>
+  filter(Species %in% c("SESE","LIDE","UMCA","PIPO","PSME", "ARME", "QUAG")) |>
+  mutate(Biomass = case_when(
+    Species == "LIDE" ~ eq(-2.2198, 2.4410, DBH),
+    Species == "SESE" ~ eq(-2.7765,2.4195, DBH),
+    Species == "QUAG" ~ eq(-2.2198, 2.4410, DBH),
+    Species == "UMCA" ~ eq(-2.2118, 2.4133, DBH),
+    Species == "ARME" ~ eq(-2.2118, 2.4133, DBH),
+    Species == "PSME" ~ eq(-2.4623, 2.4852, DBH),
+    Species == "PIPO" ~ eq(-3.2007, 2.5339, DBH)
+))
+
+cor_matrix(tree2, "Tree Qualitative Variables")
+
+```
+
+```{r}
+#| fig-width: 18
+#| fig-height: 10
+pca_me(tree2)
+```
+
+**Living Biomass Dataset**
+
+```{r}
+#| fig-width: 18
+#| fig-height: 10
+
+live <- tree2 |>
+  filter(Status == "L") |>
+  group_by(PlotBS, SampleYear, Species) |>
+  summarize(StemDensity = n(),
+            BiomassHa = (sum(Biomass, na.rm = TRUE) * 20)) |>
+  left_join(plot_meta, by = c("PlotBS", "SampleYear"), relationship = "many-to-many")
+
+
+cor_matrix(live, "Living Biomass Qualitative Variables")
+
+```
+
+```{r}
+#| fig-width: 18
+#| fig-height: 10
+
+pca_me(live)
+
+```
+
+**Standing Dead Biomass**
+
+```{r}
+#| fig-width: 18
+#| fig-height: 10
+
+dead <- tree2 |>
+  filter(!Status == "L") |>
+  group_by(PlotBS, SampleYear, Species) |>
+  summarize(StemDensity = n(),
+            StandingDeadBiomassHa = (sum(Biomass, na.rm = TRUE) * 20)) |>
+  left_join(plot_meta, by = c("PlotBS", "SampleYear"), relationship = "many-to-many")
+
+
+cor_matrix(dead, "Standing Dead Biomass Qualitative Variables")
+
+```
+
+```{r}
+#| fig-width: 18
+#| fig-height: 10
+
+pca_me(dead)
+
+```
+
+
+
+
+**Coarse woody debris biomass**
+
+
+```{r}
+#| fig-width: 18
+#| fig-height: 10
+
+cwd <- read.csv('./data/raw/cwdDB.csv') |>
+  group_by(Plot, SampleYear, Species) |>
+  summarize(StemDensity = n(),
+            CwdBiomassHa = (sum(MassPlot, na.rm = TRUE) * 20)) |>
+  left_join(plot_meta, by = c("Plot" = "PlotBS", "SampleYear"), relationship = "many-to-many")
+
+
+cor_matrix(cwd, "CWD Biomass Qualitative Variables")
+
+```
+
+```{r}
+#| fig-width: 18
+#| fig-height: 10
+
+pca_me(cwd)
+
+```
 
 
 
