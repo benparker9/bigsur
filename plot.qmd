@@ -29,9 +29,14 @@ export_me <- function(df,path){
 
 ```
 
+### Random sampling monte carlo simulations   
 
 ```{r}
-bias <- read_me("bias.csv", "clean")  
+bias <- read_me("bias.csv", "clean") 
+ex <- bias |> select(Plot, Lon, Lat)
+sf_obj <- st_as_sf(ex, coords = c("Lon", "Lat"), crs = 4326)
+#st_write(sf_obj, "data/plots.shp")
+
 z_score <- function(df,x){
   df1 <- df |>
     summarize(
@@ -110,9 +115,12 @@ leaflet(map) %>%
 
 ```
 
+### State factors 
 
+<a href=./state-factors.html target = "_blank">Extraction script</a>  
 
 ```{r}
+#plot data
 #CePlot 0=has ever had veg cov class <10%; 1= >10%; 2= >25%)
 
 raw_plot <- read_me('raw_plotDB.csv', 'raw') |>
@@ -133,8 +141,33 @@ raw_plot <- read_me('raw_plotDB.csv', 'raw') |>
   mutate(YearBurned = str_trim(YearBurned)) |>
   drop_na(YearBurned)
 
-plot <- read_me('plotDB.csv', 'raw')
+type <- raw_plot |> select(PlotBS, ForestType, PlotAspect, OverallAspect)
 
+plot <- read_me('plotDB.csv', 'raw')
+topo <- plot  |> select(Plot, Elevation, Slope, Easting, Northing) |> distinct()
+#state factors
+
+gg <- read.csv('./data/bsplots-gg.csv') |> select(Plot, grtgroup)
+soc <- read.csv('./data/bsplots-soc.csv') |> select(Plot, b0, b10, b30)
+prism <- read.csv('./data/bsplots-prism.csv') |> select(Plot, precip, temp)
+eco <- read.csv('./data/bsplots-ndvi_albedo.csv') |> select(Plot, NDVI, albedo)
+
+state <- gg |>
+  left_join(soc, by = "Plot") |>
+  left_join(prism, by = "Plot") |>
+  left_join(eco, by = "Plot") |>
+  left_join(type, by = c("Plot" = "PlotBS")) |>
+  left_join(topo, by = "Plot")
+
+
+
+```
+
+### Forest type classification model    
+
+### Time since fire calculations   
+
+```{r}
 plotDB <- left_join(raw_plot, plot, by = c("PlotBS" = "Plot"), relationship = "many-to-many") |>
   separate_wider_delim(YearBurned, delim = " ", names_sep = "_",
                        too_few = "align_start") |>
