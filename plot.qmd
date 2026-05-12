@@ -15,6 +15,7 @@ library(here)
 library(readxl)
 library(sf)
 library(leaflet)
+library(gt)
 ```    
 
 ```{r}
@@ -115,6 +116,9 @@ leaflet(map) %>%
 
 ```
 
+### Fire/disease graphical model    
+![](./fd-cycle.png)
+
 ### State factors 
 
 <a href=./state-factors.html target = "_blank">Extraction script</a>  
@@ -152,18 +156,108 @@ soc <- read.csv('./data/bsplots-soc.csv') |> select(Plot, b0, b10, b30)
 prism <- read.csv('./data/bsplots-prism.csv') |> select(Plot, precip, temp)
 eco <- read.csv('./data/bsplots-ndvi_albedo.csv') |> select(Plot, NDVI, albedo)
 
+#redwood is 2, me is 1
 state <- gg |>
   left_join(soc, by = "Plot") |>
   left_join(prism, by = "Plot") |>
   left_join(eco, by = "Plot") |>
   left_join(type, by = c("Plot" = "PlotBS")) |>
-  left_join(topo, by = "Plot")
+  left_join(topo, by = "Plot") |>
+  mutate(across(c(PlotAspect, OverallAspect), as.numeric)) |>
+  mutate(ForestType = case_when(
+                                ForestType == "1" ~ 0,
+                                TRUE ~ 1)) |>
+  mutate(across(c(grtgroup, ForestType), as.factor)) 
+
+
+```
+
+**Which state factors drive forest type?**    
+
+$$
+\begin{multline}
+\text{Forest Type} \sim \text{Soil Great Group} + \text{SOC 0cm} + \text{SOC (< 10cm)} + \text{SOC (< 30cm)} + \\
+\text{Precipitation} + \text{Temperature} + \text{NDVI} + \text{Albedo} +
+\text{Plot Aspect} + \text{Elevation} + \text{Slope} + \text{Easting} + \text{Northing}
+\end{multline}
+$$
+
+
+### Logistic Regression    
+```{r}
+library(car)
+library(pROC)
+
+state_model1 <- glm(ForestType ~ grtgroup + b0 + b10 + b30 + precip + temp +
+                    NDVI + albedo + PlotAspect + Elevation + Slope + Easting + 
+                    Northing, data = state, family = "binomial") 
+
+log_vis <- summary(state_model1) 
+print(log_vis)
+print(vif(state_model1))
+
+log_pred <- predict(state_model1, type = "response")
+
+roc_obj <- roc(state$ForestType, log_pred, quiet = TRUE)
+auc_val <- as.numeric(auc(roc_obj))
+print(paste("ROC: ", round(auc_val, 3)))
+
+plot(roc_obj, main = "ROC:",
+     col = "#9370DB", lwd = 3, legacy.axes = TRUE)
+
+```
+
+### Random forest classification model    
+
+```{r}
+library(ranger)
+library(vip)
+set.seed(200)
+
+train_index <- sample(1:nrow(state), 0.8 * nrow(state))
+train <- state[train_index, ]
+test <- state[-train_index, ]
+
+
+rf_model <- ranger(ForestType ~., data = train, 
+                   num.trees = 100, 
+                    importance = "permutation"
+)
+
+prediction <- predict(rf_model, data = test)$predictions
+
+rmse_rf <- sqrt(rf_model$prediction.error) 
+
+accuracy <- mean(prediction == test$ForestType)
+print(paste("Accuracy:", accuracy))
+
+
+p1 <- vip::vip(rf_model, bar = FALSE)
+print(p1)
+
+roc_rf <- roc(test$ForestType, as.numeric(prediction), quiet = TRUE)
+auc_rf <- as.numeric(auc(roc_rf))
+print(paste("ROC: ", round(auc_rf, 3)))
+
+plot(roc_rf, main = "ROC:",
+     col = "#9370DB", lwd = 3, legacy.axes = TRUE)
 
 
 
 ```
 
-### Forest type classification model    
+**How do the logistic and Random forest models compare?**   
+- Utilizing auc  
+
+```{r}
+comps <- tibble(
+                   Model = c("Logistic Regression", "Random Forest"),
+                             ROC = c(auc_val, auc_rf)) |>
+gt()
+
+comps
+```
+
 
 ### Time since fire calculations   
 
