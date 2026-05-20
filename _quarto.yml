@@ -1,6 +1,9 @@
 project:
   type: website
   output-dir: .
+  render:
+  - "*.qmd"
+  - "!dash/summary.qmd"
 
 website:
   title: "Big Sur SOD Analysis"
@@ -9,9 +12,11 @@ website:
     left:
       - text: "Project Notes"
         href: ./index.qmd
-      - text: "Exploration"
+      - text: "Hypothesis"
+        href: ./hypo.qmd
+      - text: "Plot/PCA"
         href: ./plot.qmd
-      - text: "Biomass"
+      - text: "Living Biomass"
         href: ./biomass.qmd
       - text: "Survival Analysis"
         href: ./survival.qmd

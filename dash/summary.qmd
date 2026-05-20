@@ -1,0 +1,171 @@
+---
+format: 
+  dashboard
+editor: visual
+server: shiny
+execute:
+  warning: false
+  message: false
+---
+
+```{r}
+#| context: setup
+library(tidyverse)
+library(shiny)
+library(ggridges)
+
+cwd_decay <- read.csv('../data/clean/cwd_decay.csv')
+cwd <- read.csv('../data/clean/cwd-mixed.csv')
+
+
+tree <- read.csv('../data/clean/tree_table_FINAL.csv') |>
+  filter(Species %in% c('SESE',  'UMCA', 'LIDE')) |>
+  mutate(Species = recode_values(Species,
+                                 'SESE' ~ 'Redwood',
+                                 'UMCA' ~ 'Bay laurel',
+                                 'LIDE' ~ 'Tanoak'))
+
+tree_vis <- tree |>
+  filter(Status == "L") |>
+  group_by(BS_plot, SampleYear, Species, fire_presence) |>
+  summarize(avg_density = n())
+
+cwd_vis <- cwd_decay |>
+  group_by(Plot, SampleYear, Species, Fire) |>
+  summarize(avg_density = n())
+
+
+fire_tree <- tree |>
+  filter(!Status == "L") 
+
+tree_group <- tree |>
+  select(BS_plot, group)
+
+fire_cwd <- cwd |>
+  left_join(tree_group, by = c("Plot" = "BS_plot"))
+
+```
+
+
+# Species Summaries   
+
+## Sidebar {.sidebar}
+
+```{r}
+selectInput(
+            "species",
+            "Species",
+            choices = sort(unique(tree$Species)),
+            selected = "Redwood")
+
+```
+
+## 
+
+### {height="50%"}
+
+```{r}
+#| title: Standing live plot density per year 
+
+plotOutput("tree_plot")
+
+```
+
+### {.fill}
+
+```{r}
+#| title: CWD plot density per year 
+
+plotOutput("cwd_plot")
+
+```
+
+
+
+
+```{r}
+#| context: server
+
+output$tree_plot <- renderPlot({
+  tree_vis |>
+    filter(Species == input$species) |>
+    ggplot(aes(x = SampleYear, y = avg_density, 
+               color = as.factor(fire_presence))) +
+    geom_point() +
+    geom_smooth(method = "lm")
+
+})
+
+output$cwd_plot <- renderPlot({
+  cwd_vis |>
+    filter(Species == input$species) |>
+    ggplot(aes(x = SampleYear, y = avg_density, 
+               color = as.factor(Fire))) +
+    geom_point() +
+    geom_smooth(method = "lm")
+})
+
+
+```
+
+
+# Fire Summaries   
+
+## Sidebar {.sidebar}
+
+```{r}
+selectInput(
+            "fire_group",
+            "Burn Scar",
+            choices = sort(unique(tree$group)),
+            selected = "control")
+
+```
+
+## 
+
+### {height="50%"}
+
+```{r}
+#| title: Standing dead DBH 
+
+plotOutput("fire_tree")
+
+```
+
+### {.fill}
+
+```{r}
+#| title: CWD mass per plot 
+
+plotOutput("fire_cwd")
+
+```
+
+```{r}
+#| context: server
+
+output$fire_tree <- renderPlot({
+  fire_tree |>
+    filter(group == input$fire_group) |>
+    ggplot(aes(x = DBH, y = Species, 
+               fill = as.factor(p_ram.presence))) +
+    geom_density_ridges(alpha = 0.5, scale = 0.5)
+
+})
+
+output$fire_cwd <- renderPlot({
+  fire_cwd |>
+    filter(BurnScar == input$fire_group) |>
+    ggplot(aes(x = SampleYear, y = PlotCwdMass,
+               color = as.factor(PRam))) +
+    geom_point() +
+    geom_smooth(method = "lm")
+
+})
+
+
+```
+
+
+

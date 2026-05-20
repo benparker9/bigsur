@@ -116,9 +116,6 @@ leaflet(map) %>%
 
 ```
 
-### Fire/disease graphical model    
-![](./fd-cycle.png)
-
 ### State factors 
 
 <a href=./state-factors.html target = "_blank">Extraction script</a>  
@@ -252,7 +249,7 @@ plot(roc_rf, main = "ROC:",
 ```{r}
 comps <- tibble(
                    Model = c("Logistic Regression", "Random Forest"),
-                             ROC = c(auc_val, auc_rf)) |>
+                             AUC = c(auc_val, auc_rf)) |>
 gt()
 
 comps

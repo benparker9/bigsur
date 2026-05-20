@@ -120,13 +120,6 @@ The initial research design does allow for generalizations for all of Big Sur. I
 
 
 
-## Biological Context  
-Key to the findings presented in analyze.qmd is the biological basis for the underlying wildfire and disease dynamics. From prior scientific literature, we understand that Phytophora ramorum kills tanoak, which accumulates on the forest floor until it's decomposed or burnt in wildire. We also know that redwood is a dead end host and does not die or spread the disease. Additionally, we understand that bay laurel is an asymptomatic spreader of Phytohpora ramorum and has the competitive advantage in diseased stands. 
-
-In diseased stands, when wildfire occurs we expect to see higher mortality in redwood than in non-diseased stands (maybe?).   
-Dr. Cobb believes we may have some blindspots in pathogen sampling, so I aim to test dead host standing biomass and host CWD to compare to disease status as a proxy for disease presence/severity.
-
-
 
 
 
