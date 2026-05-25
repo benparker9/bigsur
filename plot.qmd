@@ -28,6 +28,33 @@ export_me <- function(df,path){
   write.csv(df, here("data","clean", path))
 }
 
+climate_theme <- function(color = "darkolivegreen3") {
+  theme(
+  plot.title = element_text(
+      size = 16,
+      family = "Times New Roman",
+      color = "black", 
+      margin = margin(b = 15)
+    ),
+    # add border 1)
+    panel.border = element_rect(colour = "black", fill = NA, linetype = 1),
+    # color background 2)
+    panel.background = element_rect(fill = color),
+    # modify grid 3)
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor.x = element_blank(),
+    panel.grid.major.y =  element_blank(),
+    panel.grid.minor.y = element_blank(),
+    # modify text, axis and colour 4) and 5)
+    axis.text = element_text(colour = "black",  family = "Times New Roman"),
+    axis.title = element_text(colour = "black", family = "Times New Roman"),
+    axis.ticks = element_line(colour = "black"),
+    legend.position = "right"
+  )
+}
+# darkolivegreen3
+
+
 ```
 
 ### Random sampling monte carlo simulations   
@@ -164,7 +191,10 @@ state <- gg |>
   mutate(ForestType = case_when(
                                 ForestType == "1" ~ 0,
                                 TRUE ~ 1)) |>
-  mutate(across(c(grtgroup, ForestType), as.factor)) 
+  mutate(across(c(grtgroup, ForestType), as.factor)) |>
+  rename(Albedo = albedo,
+         Precipitation = precip,
+         Temperature = temp)
 
 
 ```
@@ -185,8 +215,8 @@ $$
 library(car)
 library(pROC)
 
-state_model1 <- glm(ForestType ~ grtgroup + b0 + b10 + b30 + precip + temp +
-                    NDVI + albedo + PlotAspect + Elevation + Slope + Easting + 
+state_model1 <- glm(ForestType ~ grtgroup + b0 + b10 + b30 + Precipitation + Temperature +
+                    NDVI + Albedo + PlotAspect + Elevation + Slope + Easting + 
                     Northing, data = state, family = "binomial") 
 
 log_vis <- summary(state_model1) 
@@ -200,7 +230,7 @@ auc_val <- as.numeric(auc(roc_obj))
 print(paste("ROC: ", round(auc_val, 3)))
 
 plot(roc_obj, main = "ROC:",
-     col = "#9370DB", lwd = 3, legacy.axes = TRUE)
+     col = "#9370DB", lwd = 3, legacy.axes = TRUE) + climate_theme()
 
 ```
 
@@ -219,7 +249,7 @@ test <- state[-train_index, ]
 rf_model <- ranger(ForestType ~., data = train, 
                    num.trees = 100, 
                     importance = "permutation"
-)
+) 
 
 prediction <- predict(rf_model, data = test)$predictions
 
@@ -229,7 +259,7 @@ accuracy <- mean(prediction == test$ForestType)
 print(paste("Accuracy:", accuracy))
 
 
-p1 <- vip::vip(rf_model, bar = FALSE)
+p1 <- vip::vip(rf_model) + climate_theme() + labs(title = "Importance index for top covariates predicting forest type")
 print(p1)
 
 roc_rf <- roc(test$ForestType, as.numeric(prediction), quiet = TRUE)
@@ -250,7 +280,8 @@ plot(roc_rf, main = "ROC:",
 comps <- tibble(
                    Model = c("Logistic Regression", "Random Forest"),
                              AUC = c(auc_val, auc_rf)) |>
-gt()
+gt() |>
+fmt_number(decimals = 2)
 
 comps
 ```

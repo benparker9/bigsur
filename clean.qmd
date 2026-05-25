@@ -255,6 +255,7 @@ tree_mod3 <- tree_mod2 |>
     Species == "PIPO" ~ eq(-3.2007, 2.5339, DBH)
 ))
 
+write.csv(tree_mod3, "./data/treeBio.csv") 
 # Q1
 # Need aggregated live biomass (hectare) per plot per species per year
 tree_biomass <- tree_mod3 |>

@@ -28,6 +28,8 @@ library(knitr)
 library(patchwork)
 library(gt)
 library(kableExtra)
+library(ggalluvial)
+
 ```    
 
 ### Recycled functions  
@@ -72,8 +74,7 @@ climate_theme <- function(color = "slategray1") {
 ### Living Biomass changes   
 
 ```{r}
-#| fig-width: 14
-#| fig-height: 16
+
 
 
 biomass_changes <- read_me("./clean/post_fire_summary.csv")
@@ -118,19 +119,43 @@ post_fire_summary_biomass <- demo_tree |>
             MedianBiomassChange = median(ChangeBiomass, na.rm = TRUE),
             SdStemChange = sd(ChangeStem, na.rm=TRUE),
             SdBiomassChange = sd(ChangeBiomass, na.rm=TRUE)
-) |>
-  rename(
-         `Mean Change in Stem Density` = 3,
-     `Mean Change in Biomass` = 4,
-     `Median Change in Stem Density` = 5,
-     `Median Change in Biomass` = 6,
-  `SD Change in Stem Density` = 7,
-  `SD Change in Biomass` = 8)
-
+)
 
 kable(post_fire_summary_biomass)
 
+```
 
+```{r}
+library(ggridges)
+red <- demo_tree |>
+  filter(Species %in% c("SESE", "LIDE", "UMCA", "QUAG")) |>
+  mutate(Species = recode_values(Species,
+                                 "SESE" ~ "Redwood",
+                                 "LIDE" ~ "Tanoak",
+                                 "UMCA" ~ "Bay Laurel",
+                                 "QUAG" ~ "Coast Live Oak"),
+         BurnScar = recode_values(BurnScar,
+                                  "sober_chalk" ~ "Chalk/Sobreanes (Double Burn)",
+                                  "sober" ~ "Sobreanes",
+                                  "dolan_chalk" ~ "Chalk/Dolan (Double Burn)",
+                                  "dolan" ~ "Dolan",
+                                  "control" ~ "No fire",
+                                  "chalk" ~ "Chalk")) |>
+  ggplot(aes(x = ChangeBiomass, y = BurnScar, fill = as.factor(PRam))) +
+  geom_density_ridges(alpha = 0.6, scale= .7) +
+  climate_theme() +
+  facet_wrap(~Species, scales = "free_x") +
+  labs(title = "Post-fire Biomass Summaries", x = "Change in biomass (Mg C)", y = "Burn Scar", fill = "Disease Status")
+
+red
+
+ggsave("./fire-sums.png", red, width = 16, height = 10)
+
+```
+
+```{r}
+#| fig-width: 14
+#| fig-height: 16
 den <- demo_tree |>
     ggplot(aes(x=ChangeStem, y= ChangeBiomass, color = Species, linetype = as.factor(PRam))) +
     geom_point() +
@@ -172,6 +197,51 @@ plot_layout(heights = c(1, 1, 2))
 
 
 ```
+
+
+```{r}
+#| eval: false
+plot_bio <- biomass_changes |>
+  select(Plot, SampleYear, BurnScar,PRam, Fire)
+
+tree_bio <- read_me("./treeBio.csv") |>
+  left_join(plot_bio, by = c("Plot", "SampleYear"), relationship = "many-to-many") |>
+  distinct() |>
+  mutate(Status = case_when(
+                            Status == "L" ~ "L",
+                            TRUE ~ "D"))
+
+pools <- tree_bio |>
+  group_by(Plot, Species, SampleYear, Status, BurnScar, PRam, Fire) |>
+  summarize(
+            Biomass = sum(Biomass, na.rm = TRUE) * 20)
+
+red_map <- pools |>
+  filter(Species == "UMCA") |>
+  filter(BurnScar == "sober") |>
+  mutate(Period = ifelse(SampleYear < 2020, "Pre", "Post")) 
+
+red_map |>
+  ggplot(aes(x = SampleYear, y = Biomass, linetype = Status, color = as.factor(PRam))) +
+  geom_point() +
+  geom_smooth(method = "lm")
+ 
+ggplot(red_map,
+       aes(axis1 = Biomass_D,
+           axis2 = Biomass_L,
+           fill = as.factor(PRam) 
+           )) +
+  geom_alluvium(aes(fill = as.factor(PRam)), alpha = 0.7) +
+  geom_stratum(width = 0.3, decreasing = FALSE) 
+
+
+is_alluvia_form(red_map,
+                axes = "Status",
+                weight = "Biomass",
+                silent = FALSE)
+
+```
+
 
 ## Underlying drivers of biomass and stem density changes   
 
@@ -349,6 +419,14 @@ add_models |>
 
 
 
+```{r}
+#| eval: false
+equations <- c(
+              'LiveBiomass ~ PlotCwdMass + HostCwdMass + DeadHostBiomass...'),
+              'LiveBiomass ~ PlotCwdMass + HostCwdMass * DeadHostBiomass...')) 
 
+results <- me_personality(eq = equations, data = biomass_df, order = 1) 
+
+```
 
 

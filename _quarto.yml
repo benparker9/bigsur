@@ -31,12 +31,8 @@ format:
     page-layout: full
     code-tools: true
     embed-resources: true
-    theme: superhero
+    theme: yeti 
     code-fold: true
-
-
-resources:
-  - red.mp4
 
 
 
