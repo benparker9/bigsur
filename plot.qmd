@@ -175,10 +175,10 @@ plot <- read_me('plotDB.csv', 'raw')
 topo <- plot  |> select(Plot, Elevation, Slope, Easting, Northing) |> distinct()
 #state factors
 
-gg <- read.csv('./data/bsplots-gg.csv') |> select(Plot, grtgroup)
-soc <- read.csv('./data/bsplots-soc.csv') |> select(Plot, b0, b10, b30)
-prism <- read.csv('./data/bsplots-prism.csv') |> select(Plot, precip, temp)
-eco <- read.csv('./data/bsplots-ndvi_albedo.csv') |> select(Plot, NDVI, albedo)
+gg <- read.csv('./data/clean/bsplots-gg.csv') |> select(Plot, grtgroup)
+soc <- read.csv('./data/clean/bsplots-soc.csv') |> select(Plot, b0, b10, b30)
+prism <- read.csv('./data/clean/bsplots-prism.csv') |> select(Plot, precip, temp)
+eco <- read.csv('./data/clean/bsplots-ndvi_albedo.csv') |> select(Plot, NDVI, albedo)
 
 #redwood is 2, me is 1
 state <- gg |>
@@ -290,6 +290,7 @@ comps
 ### Time since fire calculations   
 
 ```{r}
+
 plotDB <- left_join(raw_plot, plot, by = c("PlotBS" = "Plot"), relationship = "many-to-many") |>
   separate_wider_delim(YearBurned, delim = " ", names_sep = "_",
                        too_few = "align_start") |>
@@ -340,6 +341,10 @@ plotDB2 <- recent |>
   select(PlotBS, SampleYear, tFire)
 
 plot_meta <- left_join(plotDB, plotDB2, by = c("PlotBS", "SampleYear"))
+
+state_meta <- left_join(plotDB2, state, by = c("PlotBS" = "Plot"))
+
+
 
 ```
 

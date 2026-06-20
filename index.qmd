@@ -13,7 +13,7 @@ execute:
 
 # Sudden Oak Death in Big Sur   
 
-![](./red.jpg)
+![](./exports/red.jpg)
 
 ## Big Sur Forest Inventory Data Source
 Data was obtained through joint grant funding from the following universities (possibly more) -- UC Davis, UC Berekely, Cal Poly SLO, Boise State, North Carolina State and University of Georgia. The inventory includes three main datasets:    
@@ -117,6 +117,47 @@ The initial research design does allow for generalizations for all of Big Sur. I
 | 4 | X3 | Numeric | Density (g/cm3) at decay class 3. |
 | 5 | X4 | Numeric | Density (g/cm3) at decay class 4. |
 | 6 | X5 | Numeric | Density (g/cm3) at decay class 5. |
+
+
+
+### Main research questions      
+
+i) In diseased stands, when wildfire occurs do we see higher mortality in redwood than in non-diseased stands?    
+
+ii) How does tanoak size interact with pathogen presence to determine mortality rates? Do we see that larger trees die when the pathogen is present?    
+
+    a) How does bay laurel density influence mortality rates?   
+
+iii) How do state factors influence forest type and snag fall rates?    
+
+iv) How does fire and disease influence coarse woody debris mass? How much CWD is burnt in fires? How does pathogen presence impact CWD pools?     
+
+v) Which factors, size, species, or burn status, influence CWD decomposition rates?    
+
+
+## Fire/disease graphical model    
+Through my research, I aim to quantify the fluxes between three main carbon pools -- living biomass, snags and CWD. Below I outline the proposed carbon cycle between these main pools.   
+
+![](./exports/fd-cycle.png)
+
+
+## Hypothesis    
+
+### State factors influence on forest type
+- Elevation, precipitation and albedo will be the most important factors in forest type classification.   
+
+### Fluxes influencing living biomass     
+
+**Redwood**   
+- There will be a significant relationship between fire, disease status, slope and CWD mass and living biomass.    
+
+**Tanoak**    
+- Disease status, cwd host mass, and Bay laurel density will be significant predictors of living biomass.   
+- Tree size will be a strong determinant of living biomass fluxes via pathogen interaction.   
+
+**Bay laurel**    
+- Disease status, cwd host mass, and fire will be significant predictors of living biomass.   
+
 
 
 
