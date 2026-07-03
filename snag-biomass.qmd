@@ -1,0 +1,327 @@
+---
+format: 
+  html:
+    toc: true 
+editor: visual
+execute:
+  warning: false
+  message: false
+---
+
+```{r}
+library(devtools)
+library(bigsurrr)
+library(tidyverse)
+library(corrr)
+library(kableExtra)
+library(broom)
+library(arrow)
+
+
+
+pca_me <- function(df) {
+  df1 <- df |>
+    ungroup() |>
+    #select(!CePlot) |>
+    select(where(is.numeric)) |>
+    drop_na() 
+  pca <- prcomp(df1, scale. = TRUE, center = TRUE, retx = TRUE)
+  
+  pca_var <- pca$sdev^2
+  propve <- pca_var / sum(pca_var)
+  print(summary(pca))
+
+  par(mfrow = c(1,2))
+  plot(propve, xlab = "Principal Component",
+     ylab = "Proportion of Variance Explained",
+     ylim = c(0, 1), type = "b", main = "Scree Plot")
+ 
+  biplot(pca, xlabs=rep("", nrow(df1))) 
+  
+}
+make_titles <- function(x){
+  # expects a character or factor as an input
+  stopifnot(is.character(x) | is.factor(x))
+  
+  # remove the units at the end of the name
+  str_remove(x, pattern = "(g|mm)$") |> 
+  # replace all _ with spaces
+  str_replace_all(pattern = "_", replacement = " ") |> 
+  # remove extra whitespace on left 
+  str_trim(side = "both") |> 
+  # convert the first letter of each word to upper case
+  str_to_title()
+}
+
+
+cor_matrix <- function(df, title) {
+  df |>
+    select(where(is.numeric)) |>
+    correlate(method = "pearson",
+            use = "pairwise.complete.obs") |>
+    rename(term1 = term) |> 
+    pivot_longer(cols = -term1, 
+               names_to = "term2", 
+               values_to = "correlation") |>
+    mutate(
+      across(.cols = c(term1, term2), 
+           .fns = ~ make_titles(.x)
+           )
+    ) |> 
+    ggplot(mapping = aes(x = term1,
+                       y = term2, 
+                       fill = correlation)) +
+      geom_tile() +
+      labs(x = "", 
+       y = "", 
+       title = paste("Correlation Matrix of:", title), 
+       fill = "Correlation"
+       ) +
+      theme_bw() +
+      scale_fill_viridis_c(option = "B")
+
+}
+
+```
+
+```{r}
+#| fig-width: 18
+#| fig-height: 12
+
+
+t <- load_tree() 
+p <- load_plot()
+
+plotDB <- read_parquet("./data/arrow/plotDB.parquet") |>
+  select(Plot, SampleYear, BurnScar, PRam, Fire)
+
+p1 <- p |>
+  left_join(plotDB, by = c("PlotBS" = "Plot", "SampleYear"), relationship = "many-to-many") 
+
+
+dead <- t |>
+  filter(!Status == "L" & !Status == "") |>
+  left_join(p1, by = c("Plot" = "PlotBS", "SampleYear"), relationship = "many-to-many")
+
+
+
+dead_plot <- dead |>
+  group_by(Plot, SampleYear, Species) |>
+  summarize(StemDensity = n(),
+            StandingDeadBiomassHa = (sum(Biomass, na.rm = TRUE) * 20)) |>
+  left_join(p1, by = c("Plot" = "PlotBS", "SampleYear"), relationship = "many-to-many")
+
+
+  
+
+cor_matrix(dead_plot, "Standing Dead Biomass Qualitative Variables")
+
+
+```
+
+
+
+```{r}
+#| fig-width: 18
+#| fig-height: 10
+
+pca_me(dead_plot)
+
+```
+
+```{r}
+library(lme4) 
+library(lmerTest)
+
+species_df <- unique(dead_plot$Species)
+
+
+big_biomass_model <- function(species, form){
+  df1 <- dead_plot |>
+    filter(Species == {{species}}) 
+  #|>
+    #mutate(across(c(PlotCwdMass, HostCwdMass, DeadHostBiomass, 
+     
+    #Elevation, Slope,LiveBiomass), scale))
+  
+  Equation <- as.formula(form) 
+  tryCatch({
+    m1 <- lmer(Equation, data=df1) 
+    summary <- summary(m1)
+    df_summary <- as.data.frame(summary$coefficients) |>
+      mutate( Equation = form,
+             Species = species,
+              AIC = AIC(m1),
+              RMSE = sqrt(mean(residuals(m1) ^ 2))) 
+    df_summary$Term = rownames(df_summary)
+    return(df_summary)
+  }, error = function(e) {
+    message("Error", e$message)
+    return(NULL)
+  })
+}
+
+#cleaning function for streamlined results
+clean_me <- function(df) {
+  aic_lookup <- df |> distinct(Species, AIC, RMSE, Equation)
+  df |>
+    rename(p = 5) |>
+    mutate(
+           Results = ifelse(
+      p < 0.05,
+      paste0("**", round(Estimate, 3), " (", formatC(p, format = "e", digits = 2), ")**"),
+      paste0(round(Estimate, 3), " (", formatC(p, format = "e", digits = 2), ")")
+    )) |>
+    select(Species, Equation, Term, Results) |>
+    distinct(Species, Equation, Term, .keep_all = TRUE) |>
+    pivot_wider(names_from = "Term", values_from = "Results") |>
+    left_join(aic_lookup, by = c("Species", "Equation")) |>
+    select(Equation, Species, AIC, RMSE, everything())
+}
+
+
+formulas <- c(
+              "StandingDeadBiomassHa ~ grtgroup + b0 + b10 + b30 + Precipitation + Temperature + NDVI + Albedo +
+              ForestType + PlotAspect + OverallAspect + Elevation + Slope + Easting + Northing + tFire + BurnScar + PRam +
+              Fire + SampleYear +
+              (1 | SampleYear) + (1| Plot)",
+              "StandingDeadBiomassHa ~ grtgroup + b0 + b10 + b30 + Precipitation + Temperature + NDVI + Albedo +
+              ForestType + PlotAspect + OverallAspect + Elevation + Slope + Easting + Northing + tFire + BurnScar + PRam +
+              Fire + 
+              (1 | tFire) + (1| Plot)",
+              "StandingDeadBiomassHa ~ grtgroup + b0 + b10 + b30 + Precipitation + Temperature + NDVI + Albedo +
+              ForestType + PlotAspect + OverallAspect + Elevation  + Easting + Northing + Slope * tFire * BurnScar * PRam * 
+              Fire + 
+              (1 | tFire) + (1| Plot)",
+              "StandingDeadBiomassHa ~ grtgroup + b0 + b10 + b30 + Precipitation + Temperature + NDVI + Albedo +
+              ForestType + PlotAspect + OverallAspect + Elevation  + Easting + SampleYear + Northing + 
+              Slope * tFire * BurnScar * PRam * Fire + 
+              (1 | SampleYear) + (1| Plot)"
+
+)
+add_models <- map_df(species_df, function(sp) {
+  map_df(formulas, function(fm) {
+    big_biomass_model(sp, fm)
+  })
+}) |>
+  clean_me() |>
+  group_by(Species) |>
+  slice_min(AIC, n=5) 
+
+add_models |>
+  kable() |>
+  kable_styling(fixed_thead = TRUE,
+                bootstrap_options = c("striped", "hover")) |>
+  row_spec(0, background = "black", color = "white") |>
+  scroll_box(height = "600px", width = "100%")
+
+
+```
+
+
+
+```{r}
+# error in tFire
+dead_plot |>
+  filter(tFire <= 100) |> 
+  ggplot(aes(x = tFire, y = StandingDeadBiomassHa, color = as.factor(PRam))) +
+  geom_point() +
+  geom_smooth(method = "loess") +
+  facet_wrap(~Species)
+
+```
+
+
+
+```{r}
+plot_char <- dead |>
+  group_by(Plot, SampleYear) |>
+  summarize(StemDensity = n(),
+            BiomassHa = sum(Biomass, na.rm = TRUE),
+            AvgDBH = median(DBH, na.rm = TRUE))
+
+# how many never sampled again? -- 40
+n <- p1 |>
+  group_by(PlotBS) |>
+  filter(n() > 1)
+
+repeat_dead <- n |>
+  left_join(plot_char, by = c("PlotBS" = "Plot", "SampleYear")) |>
+  distinct()
+
+mins <- repeat_dead |>
+  group_by(PlotBS) |>
+  filter(SampleYear == min(SampleYear)) |>
+  mutate(Time = "Min")
+
+maxs <- repeat_dead |>
+  group_by(PlotBS) |>
+  filter(SampleYear == max(SampleYear)) |>
+  mutate(Time = "Max")
+
+meta <- mins |>
+  bind_rows(maxs) |>
+  select(PlotBS, SampleYear, Time, tFire, PRam, BurnScar, StemDensity, BiomassHa, AvgDBH) 
+
+# diseased, no fire stands
+dis <- repeat_dead |>
+  filter(PRam == 1 & BurnScar == "control") 
+  
+dis2 <- meta |>
+  filter(PRam == 1 & BurnScar == "control") 
+ 
+
+library(patchwork)
+
+stats <- function(df, ts = FALSE) {
+  if (ts == TRUE) {
+    den <- df |>
+      ggplot(aes(x = Time, y = StemDensity, color = Time, fill = Time)) +
+      geom_boxplot() +
+      geom_jitter()
+    
+    bio <- df |>
+      ggplot(aes(x = Time, y = BiomassHa, color = Time, fill = Time)) +
+      geom_boxplot() +
+      geom_jitter()
+    dbh <- df |>
+      ggplot(aes(x = Time, y = AvgDBH, color = Time, fill = Time)) +
+      geom_boxplot() +
+      geom_jitter()
+
+  den / bio / dbh
+
+  } else {
+
+  den <- df |>
+    ggplot(aes(x = SampleYear, y = StemDensity)) +
+    geom_point() +
+    geom_smooth(method = "loess", se = FALSE) +
+    theme_bw()
+ 
+  bio <- df |>
+    ggplot(aes(x = SampleYear, y = BiomassHa)) +
+    geom_point() +
+    geom_smooth(method = "loess", se = FALSE) +
+    theme_bw()
+  
+  dbh <- df |>
+    ggplot(aes(x = SampleYear, y = AvgDBH)) +
+    geom_point() +
+    geom_smooth(method = "loess", se = FALSE) +
+    theme_bw()
+  
+  
+
+  den / bio / dbh
+  }
+}
+
+stats(dis)
+
+stats(dis2, ts = TRUE)
+```
+
+
+
+

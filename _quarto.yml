@@ -16,6 +16,8 @@ website:
         href: ./plot.qmd
       - text: "Living Biomass"
         href: ./biomass.qmd
+      - text: "Snag Biomass"
+        href: ./snag-biomass.qmd
       - text: "CWD"
         href: ./cwd.qmd
       - text: "Original Data/R Package"

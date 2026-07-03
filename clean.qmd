@@ -21,6 +21,7 @@ pak::pak("benparker9/bigsurrr")
 
 ```{r}
 #| code-fold: false
+library(devtools)
 library(bigsurrr)
 read_me()
 ```
@@ -35,8 +36,6 @@ read_me()
 ### Original Dataset Cleaning   
 ```{r}
 library(tidyverse)
-library(here)
-library(readxl)
 library(arrow)
 library(sf)
 
@@ -166,7 +165,20 @@ describe_me(tree_final)
 
 ```
 
+```{r}
+t <- load_tree() 
 
+  
+sums <- function(df, col){
+  df |>
+  group_by(SampleYear, Plot, Species) |>
+  summarize(n = n()) |>
+  ggplot(aes(x = n)) +
+  geom_histogram() +
+  facet_wrap(~Species)
+
+}
+```
 
 #### CWD Database   
 
