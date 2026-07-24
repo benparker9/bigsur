@@ -10,7 +10,7 @@ execute:
 
 
 ## Install Data Package   
-We have created an R package, bigsurrr, for easy connection to the Big Sur dataset. These datasets are based off the original dataset and include computations beyond the original data. These assumptions and methods are outlined in the original dataset cleaning section.       
+We have created an R package, bigsurrr, for easy connection to the Big Sur dataset. These datasets are based off the original dataset and include computations beyond the original data. These assumptions and methods are outlined in the following dataset cleaning.       
 
 ```{r}
 #| code-fold: false
@@ -33,38 +33,14 @@ read_me()
 
 
 
-### Original Dataset Cleaning   
-```{r}
-library(tidyverse)
-library(arrow)
-library(sf)
-
-describe_me <- function(df){
-  cat("==Dimensions==\n")
-  print(dim(df))
-  cat("==Sampling Years Available==\n")
-  print(sort(unique(df$SampleYear)))
-  cat("==Column Names==\n")
-  print(names(df))
-  cat("==Quantitative Summary Insights==\n")
-  quant_summary <- df |>
-    select(where(is.numeric))
-  print(summary(quant_summary))
-#  cat("==Qualitative Summary Insights==\n")
-#  qual_summary <- df |>
-#    select(where(is.factor)) |>
-#    count(across(everything())) 
-#  print(qual_summary)
-}
-```    
-
-### Original Datasets  
-
-#### Plot Database    
+### Plot Database    
 - two datasets provided by the access database (plot, plot2)    
 - one provided by this [queried excel sheet](https://docs.google.com/spreadsheets/d/1v8svlbehpm1javfmewqujvsj88bfvci0/edit?gid=250385454#gid=250385454) that was then [analyzed](https://benparker9.github.io/modeling-documents/cal_poly/sod-analysis.html) for burn scar, *P.ram* and fire status.    
 
 ```{r}
+library(tidyverse)
+library(arrow)
+library(sf)
 # Plot DB Extract, Transform
 plot <- read_parquet("./data/arrow/plot1.parquet")
 plot2 <- read_parquet("./data/arrow/plot2.parquet")
@@ -112,18 +88,126 @@ plot_mod_map2 <- plot_mod_map1 |>
   mutate(Lon = as.numeric(Lon),
          Lat = as.numeric(Lat))
 
-
-# Clean plot attributes db with no coordinate data -- will be used with tree,cwd data
-plot_mod2 <- plot_mod1 |>
-  select(!(c(Easting, Northing,VisitFrequency,Radius,TotalTimesInventoried)))
-
-describe_me(plotDB)
+# exported this for monte carlo simulation
 ```
 
-#### Tree Database    
+#### State factors, tFire and final cleaning      
+
+<a href=./state-factors.html target = "_blank">Extraction script</a>  
+
+```{r}
+#plot data
+#CePlot 0=has ever had veg cov class <10%; 1= >10%; 2= >25%)
+raw_plot <- read_parquet('./data/arrow/raw_plotDB.parquet') |>
+  slice(-1) |>
+  select(1,2, 5, 27, 40, 50, 51, 63, 64) |>
+  rename(PlotBS = 2,
+         ForestType = 3,
+         YearsBurned = 4,
+         CePlot = 5,
+         Trail = 6,
+         Owner = 7,
+         PlotAspect = 8,
+         OverallAspect = 9) |>
+  mutate(YearsBurned = str_replace_all(YearsBurned, ",", " ")) |>
+  separate_wider_delim(YearsBurned, delim = " ", names_sep = "_", 
+                       too_few = "align_start") |>
+  pivot_longer(cols = YearsBurned_1:YearsBurned_9, names_to = "Year", 
+               values_to = "YearBurned") |>
+  mutate(YearBurned = str_replace_all(YearBurned, "none", NA_character_)) |>
+  drop_na(YearBurned) |>
+  filter(!YearBurned == "") |>
+  distinct()
+
+# time since fire calculations
+tFire <- raw_plot |> select(PlotBS,YearBurned) |> rename(Plot = 1) 
+
+plot <- read_parquet('./data/arrow/plotDB.parquet')
+
+p <- plot |> select(Plot, SampleYear, BurnScar) 
+
+r <- left_join(p, tFire, by = "Plot") 
+
+r2 <- r |>
+  group_by(Plot, SampleYear, BurnScar) |>
+  summarize(YearBurnedThirdMax = nth(sort(YearBurned, decreasing = TRUE), 3),
+            YearBurnedSecondMax = nth(sort(YearBurned, decreasing = TRUE), 2),
+            YearBurnedMax = max(YearBurned)) |>
+  mutate(across(c(YearBurnedThirdMax, YearBurnedSecondMax, YearBurnedMax), as.numeric))
+
+t <-r2 |>
+  filter(BurnScar == "sober" & SampleYear > 2016  ) 
+
+## time since fire calcs
+# in control cat, 2013 fire? 
+r3 <- r2 |>
+  mutate(tFire = case_when(
+                           BurnScar == "dolan" & SampleYear >= 2020 ~ SampleYear - 2020,
+                           BurnScar == "dolan" & SampleYear < 2020 ~ SampleYear - YearBurnedMax,
+                           BurnScar == "dolan_chalk" & SampleYear >= 2020 ~ SampleYear - 2020,
+                           BurnScar == "dolan_chalk" & SampleYear < 2020 & SampleYear >= 2008 ~ SampleYear - 2008,
+                          BurnScar == "dolan_chalk" & SampleYear < 2008 ~ SampleYear - YearBurnedSecondMax,
+                           BurnScar == "sober" & SampleYear > 2016 ~ SampleYear - 2016,
+                          BurnScar == "sober" & SampleYear < 2016 ~ SampleYear - YearBurnedSecondMax,
+                           BurnScar == "sober_chalk" & SampleYear > 2016 ~ SampleYear - 2016,
+                           BurnScar == "sober_chalk" & SampleYear < 2016 & SampleYear > 2008 ~ SampleYear - 2008,
+                            BurnScar == "sober_chalk" & SampleYear < 2008 ~ SampleYear - YearBurnedThirdMax,
+                            BurnScar == "chalk" & SampleYear > 2008 ~ SampleYear - 2008,
+                          BurnScar == "chalk" & SampleYear < 2008 ~ SampleYear - YearBurnedSecondMax,
+                          BurnScar == "control" & SampleYear >= 2013 & YearBurnedMax == 2013 ~ SampleYear - YearBurnedMax,
+                          BurnScar == "control" & SampleYear < 2013 & YearBurnedMax == 2013 ~ SampleYear - YearBurnedSecondMax,
+                          BurnScar == "control" & SampleYear >= 2006 & !is.na(YearBurnedMax)  ~ SampleYear - YearBurnedMax)) |>
+    select(Plot, BurnScar, SampleYear, tFire, YearBurnedMax, YearBurnedSecondMax, YearBurnedThirdMax) 
+
+#r3 can be audited for logic, 280 plots w/ sampleyear and time since fire
+# 92 plots with no tFire Data - 
+# these are cases where SampleYear < only 1 yearBurned datapoint -- 34 unique no fire plots  or SY < YearBurnedSecondMax 
+q <- r3 |>
+  filter(is.na(tFire))
+# print q to see valid NA's -- in control (no burn history -34 plots)
+# when sober, SampleYear < 2016 and no prior burn history
+# when sober_chalk, SampleYear < 2008 and no prior burn history
+# when dolan_chalk, SampleYear < 2008 and no prior burn history
+# when chalk, SampleYear < 2008 and no prior burn history
+
+
+# left join to add to p to track na's
+rF <- r3 |> select(Plot, SampleYear, BurnScar, tFire) 
+# 157/899 tFire are NA due to above reasons
+purg <- left_join(plot, rF, by = c("Plot", "SampleYear", "BurnScar"))
+
+#state factors
+gg <- read.csv('./data/clean/bsplots-gg.csv') |> select(Plot, grtgroup)
+soc <- read.csv('./data/clean/bsplots-soc.csv') |> select(Plot, b0, b10, b30)
+prism <- read.csv('./data/clean/bsplots-prism.csv') |> select(Plot, precip, temp)
+eco <- read.csv('./data/clean/bsplots-ndvi_albedo.csv') |> select(Plot, NDVI, albedo)
+
+state <- gg |>
+  left_join(soc, by = "Plot") |>
+  left_join(prism, by = "Plot") |>
+  left_join(eco, by = "Plot") |>
+  rename(Albedo = albedo,
+         Precipitation = precip,
+         Temperature = temp)
+
+# forgot redwood is 2, me is 1
+type <- raw_plot |> select(PlotBS, ForestType)
+
+# PRam, Fire, BurnScar, grtgroup, ForestType as factors
+# Plot? SampleYear?
+meta <- left_join(purg, state, by = "Plot") |>
+  left_join(type, by = c("Plot" = "PlotBS")) |>
+  mutate(across(c(PRam, Fire, BurnScar, grtgroup, ForestType), as.factor))
+
+# meta is exported as load_plot() to bigsurrr
+
+```
+
+
+
+### Tree Database    
 - Three datasets provided by the access database (tree1, tree2, tree3)    
 - One provided by this [queried excel sheet](https://docs.google.com/spreadsheets/d/1HnFcAt-QIB9nOsEm94CMsk8XmoRtvoFf/edit?gid=1239576248#gid=1239576248) 
-
 
 ```{r}
 # 116k total, 114k distinct, from google sheets
@@ -159,28 +243,15 @@ tree_final <- treeDB |>
     Species == "PSME" ~ eq(-2.4623, 2.4852, DBH),
     Species == "PIPO" ~ eq(-3.2007, 2.5339, DBH)
 ),
-    Mortality = ifelse(Status  == "L", 0, 1)) 
+    Mortality = ifelse(Status  == "L", 0, 1)) |>
+  mutate(across(c(Species, Status, Mortality), as.factor))
 
-describe_me(tree_final)
-
+# this is exported to bigsurrr as load_tree()
 ```
 
-```{r}
-t <- load_tree() 
 
-  
-sums <- function(df, col){
-  df |>
-  group_by(SampleYear, Plot, Species) |>
-  summarize(n = n()) |>
-  ggplot(aes(x = n)) +
-  geom_histogram() +
-  facet_wrap(~Species)
 
-}
-```
-
-#### CWD Database   
+### CWD Database   
 
 - Two datasets provided by the access database (cwd, cwd_samples)   
 - One dataset provided by Dr.Cobb (cwd_density)      
@@ -188,62 +259,41 @@ sums <- function(df, col){
 ```{r}
 # CWD Database 
 cwd <- read_parquet("./data/arrow/cwd.parquet") |>
-  rename(CwdId = CWD_ID,
-         Plot = BSPlotNumber,
-         Species = PlantSpeciesAcronym) |>
-  select(CwdId,Plot,Species)
+  rename(Plot = 2,
+         Species = 3) |>
+  select(CWD_ID,Plot,Species)
 
 cwd_samples <- read_parquet("./data/arrow/cwd_samples.parquet") |>
-  rename(CwdId = CWD_ID) |>
-  select(CwdId,SampleYear,DecayClass,Volume)
+  select(CWD_ID,SampleYear,DecayClass,Volume)
 
-# merge on CwdId to add plot,species id's
+# merge on cwdid to add plot,species id's
 # these id's are unique to stems
+#only evaluating decayclass 1-5 due to density data gaps (only 1-5 studied) and
+# QUAG, UMCA, SESE, LIDE -- other oaks?
 cwd_final <- cwd_samples |>
-  left_join(cwd, by="CwdId")
+  left_join(cwd, by="CWD_ID")|>
+  filter(DecayClass <= 5 & Species %in% c('QUAG', 'UMCA', 'LIDE', 'SESE'))
 
-# Densities per species per decay class - experimental dataset provided by my professor
+# densities per species per decay class - experimental dataset provided by my professor
 cwd_density <- read_parquet("./data/arrow/cwd_density.parquet") |>
   pivot_longer(cols=X1:X5, values_to="Density", names_to="DecayClass") |>
   rename(Species = Speices) |>
   mutate(DecayClass = str_remove(DecayClass, "X"))
 
-# need to get overall average density per decay class for cwd data not studied
-avg_decay <- cwd_density |>
-  group_by(DecayClass) |>
-  summarize(Density = mean(Density))
+cwd_meta <- left_join(cwd_final, cwd_density, by = c("Species", "DecayClass")) |>
+  mutate(Mass = (Volume * (Density))) |>
+  mutate(across(c(DecayClass, Species), as.factor))
 
-# merge for one cohesive density table to be merged
-cwd_density2 <- bind_rows(cwd_density,avg_decay)
+# this is exported as load_cwd() to bigsurrr
 
-# Join with raw cwd data - only evaluating DecayClass 1-5 due to density data gaps (only 1-5 studied)
-cwd_final2 <- cwd_final |>
-  left_join(cwd_density2, by=c("Species","DecayClass")) |>
-  filter(DecayClass <= 5)
-
-# no na's dataset, need to add average density per decay class to the other species
-cwd_no_na <- na.omit(cwd_final2)
-na <- cwd_final2 |>
-  filter(is.na(Density)) |>
-  filter(!is.na(Species)) |>
-  select(!Density)
-na_mod1 <- na |>
-  left_join(avg_decay, by="DecayClass")
-# Na_mod1 is then ready to merge with cwd final
-cwd_final3 <- bind_rows(cwd_no_na, na_mod1) 
-
-# Need to calculate mass and scale to per hectare (plots are 1/20ha so scale by 20 to get ha)
-# Mass (Mg) = volume (m3) * density (g/cm3)  * 20 
 # Only to follow repeatedly measured cwd stems - at least measured twice 
 # Only need id, sampleyear, DecayClass,Plot,Species,Mass
 # Need to create t column where t0 is the first time the CwdId was measured 
 # need to create column named y which is log(Mt / M0) 
-cwd_final4 <- cwd_final3 |>
-  mutate(Mass = (Volume * (Density)),
-  DecayClass = as.numeric(DecayClass)) |>
-  group_by(CwdId) |>
+cwd_rep <- cwd_meta |>
+  group_by(CWD_ID) |>
   filter(n() > 1) |>
-  group_by(CwdId, Plot, DecayClass) |>
+  group_by(CWD_ID, Plot, DecayClass) |>
   mutate(
     tInit = min(SampleYear),
     t = SampleYear - tInit,
@@ -252,6 +302,63 @@ cwd_final4 <- cwd_final3 |>
   ) |>
   ungroup() 
 
-describe_me(cwd_final4)
+# this is exported as load_cwd_repeated() in bigsurrr
+
 ```
+
+### Meta Dataset    
+- Only analyze LIDE, QUAG, SESE, UMCA in both tree and cwd pools    
+  - Generate per ha CWD summaries, host summaries (QUAG, LIDE)     
+  - Generate per ha dead host biomass   
+- Remove plots with no CWD data   
+
+
+```{r}
+cwd_bio <- cwd_meta |>
+  group_by(SampleYear, Plot) |>
+  summarize(CWD_Ha_Biomass = sum(Mass) * 20)
+
+cwd_host <- cwd_meta |>
+  filter(Species %in% c('LIDE', 'QUAG')) |>
+  group_by(SampleYear, Plot) |>
+  summarize(CWD_Host_Biomass = sum(Mass) * 20) |>
+  mutate(CWD_Host_Biomass = replace_na(CWD_Host_Biomass, 0))
+
+cwd_sum <- left_join(cwd_bio, cwd_host, by = c("SampleYear", "Plot"))
+
+tree_host <- tree_final |>
+  filter(Species %in% c('LIDE', 'QUAG') & Status != "L") |>
+  group_by(SampleYear, Plot) |>
+  summarize(Snag_Host_Biomass = sum(Biomass) * 20) |>
+  mutate(Snag_Host_Biomass = replace_na(Snag_Host_Biomass, 0))
+
+frank <- left_join(tree_final, tree_host, by = c("Plot", "SampleYear")) |>
+  left_join(cwd_sum, by = c("Plot", "SampleYear")) |>
+  left_join(meta, by = c("Plot", "SampleYear")) |> 
+  distinct()
+
+#280 distinct plots with data
+# for final df, filter out NA's
+# 98,986 to 22, 497 datapoints
+# 280 to 94 plots
+f2 <- frank |>
+  drop_na() |>
+  distinct()
+
+
+# this is load_meta() in bigsurrr
+print(paste("Number of distinct plots:", n_distinct(f2$Plot)))
+print(paste("Dimensions:", dim(f2)))
+print("Sample Years:")
+print(sort(unique(f2$SampleYear)))
+print("Burn Scars:")
+print(unique(f2$BurnScar))
+
+
+```
+
+
+
+
+
 
