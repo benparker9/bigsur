@@ -273,10 +273,6 @@ comp_hist |>
 
 ```
 
-**Preliminary Results**     
-
-The histogram suggests that there are plots that have been understudied. By comparing distributions of z-scores between a simulated dataset and our dataset, we show that the distribution of sampling for the inventory is not perfectly Poisson and there has been frequency bias throughout the study.    
-
 
 ### Principle Component Analysis     
 
@@ -558,8 +554,87 @@ comps
 ```
 
 
+### Plot level biomass changes    
+
+```{r}
+#| fig-width: 16
+#| fig-height: 9 
+
+t <- load_tree()
+
+l_sum <- function(df, live = TRUE) {
+  if (live == TRUE) {
+    df |>
+      filter(Status == "L" & Species %in% c('LIDE', 'SESE', 'UMCA', 'QUAG')) |>
+      group_by(Plot, SampleYear, Species) |>
+      summarize(LiveBiomass = sum(Biomass, na.rm = TRUE) * 20) |>
+      group_by(Plot, SampleYear) |>
+      mutate(TotalLiveBiomass = sum(LiveBiomass))
+
+  } else {
+    df |>
+      filter(!Status == "L" & Species %in% c('LIDE', 'SESE', 'UMCA', 'QUAG')) |>
+      group_by(Plot, SampleYear, Species) |>
+      summarize(SnagBiomass = sum(Biomass, na.rm = TRUE) * 20) |>
+      group_by(Plot, SampleYear) |>
+      mutate(TotalSnagBiomass = sum(SnagBiomass))
+
+  }
+
+}
+
+live <- l_sum(t)
+
+dead <- l_sum(t, live = FALSE)
+
+standing_bio <- left_join(live, 
+                          dead |> select(!TotalSnagBiomass),
+                          by = c("Plot", "SampleYear", "Species")
+                          ) |>
+                mutate(SnagBiomass = replace_na(SnagBiomass, 0)) |>
+                left_join(dead |> select(!c(Species,SnagBiomass)),
+                          by = c("Plot", "SampleYear")) |>
+                distinct()
 
 
+cwd_bio <- load_meta() |> select(Plot, SampleYear, CWD_Ha_Biomass) 
+
+
+classes <- left_join(cwd_bio, standing_bio, by = c("Plot", "SampleYear"))
+
+classes |>
+  select(Plot, SampleYear, CWD_Ha_Biomass, TotalLiveBiomass, TotalSnagBiomass) |>
+  pivot_longer(cols = CWD_Ha_Biomass:TotalSnagBiomass, names_to = "Type", values_to = "Biomass") |>
+  ggplot(aes(x = Biomass)) +
+  geom_histogram() +
+  facet_wrap(~Type, scales = "free_x") + 
+  theme_bw()
+
+classes |>
+  pivot_longer(cols = c(CWD_Ha_Biomass, TotalLiveBiomass,TotalSnagBiomass), names_to = "Type", values_to = "Biomass") |>
+  drop_na()|>
+  ggplot(aes(x = Biomass, fill = Species)) +
+  geom_histogram(position = "stack", alpha = 0.5) +
+  facet_wrap(~Type, scales = "free_x") + 
+  theme_bw()
+
+
+
+
+
+classes |>
+  select(Plot, SampleYear, CWD_Ha_Biomass, TotalLiveBiomass, TotalSnagBiomass) |>
+  mutate(across(c(CWD_Ha_Biomass, TotalLiveBiomass, TotalSnagBiomass), 
+                ~log1p(.x), 
+                .names = "Log{.col}")) |>
+  distinct() |>
+  pivot_longer(cols = LogCWD_Ha_Biomass:LogTotalSnagBiomass, names_to = "Type", values_to = "Biomass") |>
+  ggplot(aes(x = SampleYear, y = Biomass, color = Type)) +
+  geom_point() +
+  geom_smooth(method = "loess") +
+  theme_bw()
+
+```
 
 
 
