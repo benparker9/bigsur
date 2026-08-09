@@ -183,6 +183,7 @@ library(kableExtra)
 library(ggalluvial)
 library(tidyverse)
 library(bigsurrr)
+library(patchwork)
 ```
 
 
@@ -638,11 +639,121 @@ classes |>
 
 
 
+```{r}
+#| eval: false
+
+# 426 error in pram status should be pram == 1, bug in cwd_ha_biomass not at species level (sese lide the same)
+p <-  load_plot() |> filter(Plot == "BS053") 
+
+sb <- standing_bio |> filter(Plot == "BS053") 
+
+cb <- classes |>  filter(Plot == "BS053") |> distinct() 
+
+p1 <- cb |>
+  ggplot(aes(x = SampleYear, y = LiveBiomass, color = Species)) +
+  geom_point() +
+  geom_smooth(method = "loess") +
+  theme_bw()
+
+p2 <- cb |>
+  ggplot(aes(x = SampleYear, y = SnagBiomass, color = Species)) +
+  geom_point() +
+  geom_smooth(method = "loess") +
+  theme_bw()
+
+p3 <- cb |>
+  ggplot(aes(x = SampleYear, y = CWD_Ha_Biomass)) +
+  geom_point() +
+  geom_smooth(method = "loess") +
+  theme_bw()
 
 
+p1 / p2 / p3 
+
+```
+
+**How have plot's biomass levels changed from the first to most recent inventory?**     
+- **How have biomass levels changed across species?**     
+
+```{r}
+library(gganimate)
+library(sf)
+
+coords <- bias |>
+  select(Plot, Lon, Lat)
+
+bio_ts <- left_join(standing_bio, coords, by = "Plot")
 
 
+map_sf <- bio_ts |>
+    select(Plot, SampleYear, Lon, Lat, TotalLiveBiomass) 
+ 
+p_map <- ggplot(map_sf, aes(x = Lon, y = Lat)) +
+  geom_point(aes(color = TotalLiveBiomass), size=5) +
+  scale_color_viridis_c(name = "Biomass", option = "D") +
+  coord_sf() +
+  theme_minimal() +
+  labs(title = "Biomass changes from 2006 to 2023",
+       subtitle = "Sample Year: {closest_state}") +
+  transition_states(SampleYear, transition_length = 1, state_length = 8) +
+  ease_aes('linear')
 
+#anim <- animate(p_map, n_frames = 80, fps = 3, width = 800, height = 600,renderer = gifski_renderer())
+
+
+#anim_save("biomass_animation.gif", animation = anim)
+```
+
+![](biomass_animation.gif)
+
+
+```{r}
+#| fig-width: 16
+#| fig-height: 10
+
+min_max <- bio_ts |>
+  group_by(Plot, Species) |>
+  filter(SampleYear %in% c(min(SampleYear), max(SampleYear))) |>
+  mutate(period = if_else(SampleYear == min(SampleYear), "min", "max")) |>
+  ungroup() |>
+  select(Plot, Species, period, SampleYear, LiveBiomass, TotalLiveBiomass, Lat, Lon) |>
+  pivot_wider(
+    names_from = period,
+    values_from = c(SampleYear, LiveBiomass, TotalLiveBiomass)
+  ) |>
+  mutate(
+    LiveBiomass_diff = LiveBiomass_max - LiveBiomass_min,
+    TotalLiveBiomass_diff = TotalLiveBiomass_max - TotalLiveBiomass_min,
+    LiveBiomass_pct_change = (LiveBiomass_diff / LiveBiomass_min) * 100,
+    TotalLiveBiomass_pct_change = (TotalLiveBiomass_diff / TotalLiveBiomass_min) * 100
+  )
+
+map_sf2 <- min_max |> select(Plot, TotalLiveBiomass_diff, Lat, Lon)
+
+p_map2 <- ggplot(map_sf2, aes(x = Lon, y = Lat)) +
+  geom_point(aes(color = TotalLiveBiomass_diff), size=5) +
+  scale_color_viridis_c(name = "Biomass", option = "D") +
+  coord_sf() +
+  theme_bw() +
+  labs(title = "Plot Biomass changes from 2006 to 2023") 
+
+p_map2
+
+diff <- min_max |>
+  select(Plot, TotalLiveBiomass_min, TotalLiveBiomass_max) |>
+  pivot_longer(cols = TotalLiveBiomass_min:TotalLiveBiomass_max, names_to = "Date", values_to = "Biomass") 
+
+diff |>
+  ggplot(aes(x = Date, y = Biomass, fill = Date)) +
+  geom_boxplot() +
+  theme_bw()
+
+
+anova_diff <- aov(Biomass ~ as.factor(Date), data = diff)
+summary(anova_diff)
+TukeyHSD(anova_diff)
+
+```
 
 
 
