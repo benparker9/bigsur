@@ -184,6 +184,8 @@ library(ggalluvial)
 library(tidyverse)
 library(bigsurrr)
 library(patchwork)
+library(furrr)
+library(sf)
 ```
 
 
@@ -755,13 +757,188 @@ TukeyHSD(anova_diff)
 
 ```
 
+#### Remote Sensing Biomass Mapping     
+Using field-measured biomass data, can you build a geospatial model to predict biomass changes due to wildfire?   
+
+
+$$
+Live Biomass (Mg C/ ha) ~ Slope + Elevation + NDVI + Burn Area Index  + Fire Status + (1 | SampleYear) + (1 | Plot)
+$$      
+
+
+```{r}
+plot_fire <- load_plot() |> select(Plot, SampleYear, Fire)
+
+ha_bio <- standing_bio |>
+  select(Plot, SampleYear, TotalLiveBiomass, TotalSnagBiomass) |>
+  left_join(plot_fire, by = c("Plot", "SampleYear")) |>
+  distinct()
+
+# n of plots =222
+dump <- read_parquet("./data/arrow/bio-remote.parquet") |>
+  select(Plot, start_date, elevation, slope, precipitation, temperature_2m_max, NDVI, BAI) |>
+  mutate(SampleYear = year(start_date)) |>
+  select(!start_date) 
+  
+
+# n = 197 plots with remote biomass/remote data
+meta_bio <- ha_bio |>
+  ungroup() |>
+  left_join(
+    dump,     by = c("Plot", "SampleYear")
+  ) |>
+  drop_na() |>
+  mutate(Fire = as.factor(Fire))
+
+vars_to_scale <- c('slope', 'elevation', 'precipitation', 'temperature_2m_max', 'NDVI', 'BAI')
+meta_bio[vars_to_scale] <- lapply(meta_bio[vars_to_scale], function(x) as.numeric(scale(x)))
 
 
 
+bio_model <- lmer(TotalLiveBiomass ~  SampleYear + slope + elevation + precipitation + temperature_2m_max + 
+                     NDVI + BAI + Fire + (1 | Plot) + (1 | SampleYear), 
+                   data = meta_bio)
+
+meta_bio$predictedBio <- predict(bio_model, newdata = meta_bio)
+
+# Regression metrics
+rmse_test <- sqrt(mean((meta_bio$predictedBio - meta_bio$TotalLiveBiomass)^2))
+mae_test  <- mean(abs(meta_bio$predictedBio - meta_bio$TotalLiveBiomass))
+r2_test   <- cor(meta_bio$predictedBio, meta_bio$TotalLiveBiomass)^2
+aic <- AIC(bio_model)
+ 
+print(paste("Test RMSE:", round(rmse_test, 3)))
+print(paste("Test MAE:", round(mae_test, 3)))
+print(paste("Test R-squared:", round(r2_test, 3)))
+print(paste("Test AIC:", round(aic, 3)))
+
+```
 
 
+```{r}
+#| eval: false  
+
+add_model <- function(path) {
+  bs_big <- read.csv(path) |>
+    mutate(coords = .geo) |>
+    mutate(coords = str_extract(coords, "(?<=\\[)[^\\]]+(?=\\])")) |>
+    separate_wider_delim(coords, delim = ",", names = c("lon", "lat")) |>
+    mutate(across(c(lat, lon), as.numeric)) |>
+    mutate(SampleYear = year(start_date)) |>
+    select(!start_date) |>
+    select(SampleYear, BAI, NDVI, elevation, precipitation, slope,
+           temperature_2m_max, lon, lat) |>
+    group_by(lon, lat) |>
+    mutate(Plot = cur_group_id()) |>
+    ungroup() 
+
+    return(bs_big)
+}
 
 
+paths <- c("./data/clean/bs-big3-2006.csv", "./data/clean/bs-big3-2007.csv", "./data/clean/bs-big3-2008.csv", "./data/clean/bs-big3-2009.csv",
+           "./data/clean/bs-big3-2010.csv", "./data/clean/bs-big3-2011.csv", "./data/clean/bs-big3-2012.csv", "./data/clean/bs-big3-2013.csv",
+           "./data/clean/bs-big3-2014.csv", "./data/clean/bs-big3-2015.csv", "./data/clean/bs-big3-2016.csv", "./data/clean/bs-big3-2017.csv",
+           "./data/clean/bs-big3-2018.csv", "./data/clean/bs-big3-2019.csv", "./data/clean/bs-big3-2020.csv",  "./data/clean/bs-big3-2021.csv",
+          "./data/clean/bs-big3-2022.csv"
+
+)
+
+meta_big <- future_map(.x = paths, .f = add_model) |> bind_rows() 
+
+
+# clip by dolan fire
+dolan <- st_read("./data/raw/dolan.json")
+
+pts <- st_as_sf(meta_big, coords = c("lon", "lat"), crs = 4326)
+
+dolan <- st_transform(dolan, st_crs(pts))
+
+dolan <- st_make_valid(dolan)
+clipped <- st_filter(pts, dolan)
+
+
+clipped_df <- clipped |> 
+  mutate(lon = st_coordinates(clipped)[,1],
+         lat = st_coordinates(clipped)[,2]) |> 
+  st_drop_geometry() |>
+  filter(SampleYear %in% c(2018, 2020,  2022)) |>
+  mutate(Fire = case_when(
+                          SampleYear < 2020 ~ 0,
+                          TRUE ~ 1)) |>
+  mutate(Fire = as.factor(Fire))
+
+vars_to_scale <- c('slope', 'elevation', 'precipitation', 'temperature_2m_max', 'NDVI', 'BAI')
+clipped_df[vars_to_scale] <- lapply(clipped_df[vars_to_scale], function(x) as.numeric(scale(x)))
+
+clipped_df$predictedBio <- predict(bio_model, newdata = clipped_df, allow.new.levels = TRUE)
+
+
+map_sf <- clipped_df |>
+    select(Plot, SampleYear, lon, lat, predictedBio) 
+
+
+library(rnaturalearth)  
+library(gganimate)
+
+
+ca_boundary <- ne_states(country = "united states of america", returnclass = "sf") |>
+  dplyr::filter(name == "California")
+
+bs_bbox <- st_as_sfc(st_bbox(c(
+  xmin = min(map_sf$lon), xmax = max(map_sf$lon),
+  ymin = min(map_sf$lat), ymax = max(map_sf$lat)
+), crs = st_crs(4326)))
+
+inset_map <- ggplot() +
+  geom_sf(data = ca_boundary, fill = "grey90", color = "black", linewidth = 0.3) +
+  geom_sf(data = bs_bbox, fill = NA, color = "red", linewidth = 0.8) +
+  theme_void() +
+  theme(panel.background = element_rect(fill = "white", color = "black"))
+
+inset_grob <- ggplotGrob(inset_map)
+
+lon_range <- range(map_sf$lon)
+lat_range <- range(map_sf$lat)
+lon_pad <- diff(lon_range) * 0.2  
+lat_pad <- diff(lat_range) * 0.3
+
+p_map <- ggplot(map_sf, aes(x = lon, y = lat)) +
+  geom_point(aes(color = predictedBio), size = 8) +           
+  scale_color_viridis_c(name = "Biomass", option = "D") +
+  coord_sf(clip = "off") +
+  theme_minimal(base_size = 22) +                              
+  theme(plot.margin = margin(t = 20, r = 250, b = 20, l = 20),  
+        plot.title = element_text(size = 26, face = "bold"),
+        plot.subtitle = element_text(size = 20)) +
+  labs(title = "Biomass changes due to the Dolan Fire from 2018 to 2022",
+       subtitle = "Sample Year: {closest_state}", x= "Longitute", y = "Latitude") +
+  annotation_custom(
+    grob = inset_grob,
+    xmin = lon_range[1] - lon_pad * 0.1  ,   
+    xmax = lon_range[1] + lon_pad ,      
+    ymin = lat_range[1],
+    ymax = lat_range[1] + lat_pad * 1.5       
+    ) +
+  transition_states(SampleYear, transition_length = 1, state_length = 2) +
+  ease_aes('linear')
+
+anim <- animate(
+  p_map,
+  n_frames = 30,
+  fps = 20,
+  width = 2400,    
+  height = 1400,
+  res = 150,
+  renderer = gifski_renderer()
+)
+
+anim_save("biomass_animation_fire.gif", animation = anim)
+
+```
+
+
+![](biomass_animation_fire.gif)
 
 
 
