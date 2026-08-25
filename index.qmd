@@ -15,10 +15,6 @@ execute:
 
 ![](./exports/red.jpg)
 
-## Introduction     
-**This is subject to change and is used as a placeholder.**   
-In the late 1990's, the invasive oomycete pathogen, Phytophthora ramorum, was introduced in CA and has resulted in a widespread epidemic of Sudden Oak Death (SOD). SOD has spread from southern Oregon to the southern Big Sur Coast and has produced novel amounts of tree mortality previously unseen by non-native forest pathogens (Cobb et al., 2020). In conjunction, dead trees have resulted in denser fuel structures, leading to synergistic impacts with both disease and fire combining to reshape native forests (Shaw et al., 2022). I aim to develop a cohesive model describing the fire and disease carbon cycle in three pools: standing live biomass, standing dead biomass (snag) and coarse woody debris (CWD) and the fluxes driving carbon changes between each pool.
-
 ### Main research questions      
 
 i) How has carbon biomass changed due to fire and disease throughout the inventory? How has species (Tanoak, Coast Live Oak, Redwood, Bay Laurel) density and biomass been altered?    
@@ -35,7 +31,6 @@ v) How does fire and disease influence coarse woody debris mass? How much CWD is
 
 vi) Which factors, size, species, or burn status, influence CWD decomposition rates?   
 
-vii) Can you build a predictive model using mixed effects models and survival analysis to quantify biomass changes outside of observed values?   
 
 
 ### Fire/disease graphical model    
@@ -44,126 +39,9 @@ Through my research, I aim to quantify the fluxes between three main carbon pool
 ![](./exports/fd-cycle.png)
 
 
-### Hypothesis    
-
-### State factors influence on forest type
-- Elevation, precipitation and albedo will be the most important factors in forest type classification.   
-
-### Fluxes influencing living biomass     
-
-**Redwood**   
-- There will be a significant relationship between fire, disease status, slope and CWD mass and living biomass.    
-
-**Tanoak**    
-- Disease status, cwd host mass, and Bay laurel density will be significant predictors of living biomass.   
-- Tree size will be a strong determinant of living biomass fluxes via pathogen interaction.   
-
-**Bay laurel**    
-- Disease status, cwd host mass, and fire will be significant predictors of living biomass.   
-
-
 
 
 ## Methods      
-
-### Big Sur Forest Inventory    
-Data was obtained through joint grant funding from the following universities (possibly more) -- UC Davis, UC Berekely, Cal Poly SLO, Boise State, North Carolina State and University of Georgia. The inventory includes three main datasets:    
-    1) Plot attributes dataset which contains data on spatial and temporal elements of plot locations.   
-    2) Tree dataset composed of tree measurements corresponding to size and health.    
-    3) Coarse woody debris (CWD) dataset composed of woody material over 5cm in diameter found on the forest floor.   
-
-#### Collection Method
-Ecological field data collection focused on measuring different elements of Big Sur forests.   
-- 280 500m2 fixed-radius plots were established to measure:   
-    - Plot topographic features such as elevation,slope,aspect, gps coordinates and disease status.  
-    - Diameter at breast height (DBH) of all trees over 1 cm   
-        - Additionally trees are assessed for health class (categorical) and status (categorical).   
-    - Coarse woody debris (CWD) volume of all woody debris > 5 cm present on the forest floor, additionally CWD is assessed for decay class (categorical).    
-
-#### Datasets 
-**Style Guide**    
-- Column names cleaned to PascalCase (original case used by UC Davis)   
-- Tables formatted with kable   
-- Graphs utilize theme_classic (I would have made my own but the function is lengthy and I could not fit it < 6 pages>)   
-
-#### Plot Database
-- Each row is when the plot was visited. There are many repeat variables (elevation,slope,burn scar,etc.) however this is the accounting method to track when plots were visitied and how they've changed.   
-- Number of columns = 12   
-- 2006-2025
-
-#### Variable Descriptions
-| \# | Variable Name | Data Type | Role |
-|------------------|------------------|------------------|------------------|
-| 1 | Plot | Categorical | Unique plot identifier used to track the spatial distribution of the plot, tree and cwd data. |
-| 2 | SampleYear | Date | Year plot was inventoried. |
-| 3 | Elevation | Numeric | Average elevation in meters of the plot.|
-| 4 | Slope | Numeric | Average slope in percent of the plot.|
-| 5 | Burn Scar | Categorical | Burn scar that impacted the plot - Chalk (2008), Sobreanes (2016), Dolan (2020). Some plots were burned twice in overlapping burns. Plots that did not burn are called control. |
-| 6 | PRam | Categorical Binary| Disease presence within plot (from direct samples of tissue).|
-| 7 | Fire | Categorical Binary| Fire presence within plot. For instance, although plots are within the Dolan fire burn scar, pre 2020, they will have Fire = 0. |
-| 8 | Easting | Numeric | GPS reading of plot center.|
-| 9 | Northing | Numeric | GPS reading of plot center.|
-
-#### Tree Database
-- Each row is a tree measurement from when the plot was visited.    
-- Number of observations (n) = 116,706    
-- Number of columns = 7     
-- 2006 - 2025
-
-#### Variable Descriptions
-| \# | Variable Name | Data Type | Role |
-|------------------|------------------|------------------|------------------|
-| 1 | Plot | Categorical | Unique plot identifier used to track the spatial distribution of the plot, tree and cwd data. |
-| 2 | SampleYear | Date | Year plot was inventoried. |
-| 3 | Species | Categorical | Unique species identifier built off the first two letters of the genus and species. IE. Sequoia sempervirens = SESE|
-| 4 | StemId | Numeric | Unique stem id given to each stem.|
-| 5 | Status | Categorical | Overall health of the tree - L (live) all the rest (D,M,E,NM) mean dead and are UC Davis jargon |
-| 6 | DBH | Numeric | Diameter of the tree at breast height (cm).|
-
-
-#### Coarse woody debris (CWD) databases  
-
-#### Tbl CWD       
-- Each row is a unique CWD stem measured from when the plot was visited. Includes species and other metadata (time stamp, etc.)    
-- Number of observations (n) = 1634  
-- Number of columns = 6 (only three needed for analysis)     
-
-#### Variable Descriptions
-| \# | Variable Name | Data Type | Role |
-|------------------|------------------|------------------|------------------|
-| 1 | CWD_ID | Numeric | Unique stem id that allows us to track each stem through time. |
-| 2 | BSPlotNumber | Numeric | Unique plot identifier used to track the spatial distribution of the plot, tree and cwd data. |
-| 3 | PlantSpeciesAcronym | Categorical | Species identifier built off the first two letters of the genus and species. IE. Sequoia sempervirens = SESE.|
-
-#### Tbl CWD Samples     
-- Each row is a unique CWD stem measured from when the plot was visited. Includes actual measurements including diameters, volumes and decay class.    
-- Number of observations (n) = 3363  
-- Number of columns = 17 (only four needed for analysis)     
-- 2009-2025  
-
-#### Variable Descriptions
-| \# | Variable Name | Data Type | Role |
-|------------------|------------------|------------------|------------------|
-| 1 | CWD_ID | Numeric | Unique stem id that allows us to track each stem through time. |
-| 2 | SampleYear | Date | Year plot was inventoried. |
-| 3 | DecayClass | Categorical | Indicates how recently the tree appeared on the forest floor (1=Fresh, 5=Very Decayed)|
-| 4 | Volume | Numeric | Total volume (m3) of the stem. |
-
-
-#### CWD Densities (Cal Poly)
-- Each row is an average wood density (g/cm3) for six species across the five decay classes. Data was obtained through experiments by Dr.Cobb (CAFES) and has not been published.      
-- Number of observations (n) = 6  
-- Number of columns = 6 (will be pivoted to two)     
-
-#### Variable Descriptions
-| \# | Variable Name | Data Type | Role |
-|------------------|------------------|------------------|------------------|
-| 1 | Species | Categorical | Unique species identifier built off the first two letters of the genus and species. IE. Sequoia sempervirens = SESE. |
-| 2 | X1 | Numeric | Density (g/cm3) at decay class 1. |
-| 3 | X2 | Numeric | Density (g/cm3) at decay class 2. |
-| 4 | X3 | Numeric | Density (g/cm3) at decay class 3. |
-| 5 | X4 | Numeric | Density (g/cm3) at decay class 4. |
-| 6 | X5 | Numeric | Density (g/cm3) at decay class 5. |
 
 #### Libraries Needed     
 
@@ -186,6 +64,10 @@ library(bigsurrr)
 library(patchwork)
 library(furrr)
 library(sf)
+library(performance)
+library(lavaan)
+library(bestNormalize)
+library(ggridges)
 ```
 
 
@@ -557,13 +439,415 @@ comps
 ```
 
 
-### Plot level biomass changes    
+    
+
+### Understanding stand density and biomass distributions      
+
+##### Across all the data  
+
+```{r}
+#| fig-width: 16
+#| fig-height: 9 
+
+t <- load_tree() |> filter(Species %in% c("SESE", "LIDE", "QUAG", "UMCA"))
+p <- load_plot() |> select(Plot, SampleYear, Elevation, Slope, BurnScar, PRam, Fire, tFire, ForestType)
+
+q <- left_join(t, p, by = c("Plot", "SampleYear")) |> distinct() 
+
+q_sums <- q |>
+  
+  group_by(Plot, Species, SampleYear, Status, PRam, Fire, ForestType) |>
+  mutate(Status = case_when(
+                            Status == "L" ~ 0,
+                            TRUE ~ 1)) |>
+  summarize(TotalStem = n(),
+            TotalBiomass = sum(Biomass, na.rm = TRUE)) |>
+  distinct() 
+
+no_empty_dis <- q_sums |> filter(TotalStem > 0 & TotalBiomass > 0)
+
+box_cox <- function(dfCol){
+  pt <- orderNorm(dfCol)
+  
+  n <- pt$x.t
+  return(n)
+}
+
+no_empty_dis$BCTotalBiomass <- box_cox(no_empty_dis$TotalBiomass)
+no_empty_dis$BCTotalStem <- box_cox(no_empty_dis$TotalStem)
+
+
+p_total <- function(df) {
+  df |>
+   group_by(Plot, SampleYear, ForestType, Status) |>
+   summarize(TotalStem = sum(TotalStem, na.rm = TRUE),
+             TotalBiomass = sum(TotalBiomass, na.rm = TRUE))
+
+}
+
+totals <- p_total(no_empty_dis)
+
+totals$BCTotalStem <- box_cox(totals$TotalStem) 
+totals$BCTotalBiomass <- box_cox(totals$TotalBiomass) 
+
+
+normal <- function(df, stat, metric_need = TRUE, metric = NULL, status = NULL) {
+  
+  if (metric_need) {
+    df1 <- df |> filter(ForestType == metric & Status == status)
+  } else {
+    df1 <- df
+  }
+
+  stat_vec <- df1 |> pull({{ stat }})
+  stat_vec <- na.omit(stat_vec)
+  
+  a <- df1 |>
+    ggplot(aes(x = {{ stat }})) +
+    geom_histogram(aes(y = after_stat(density)), fill = "gray80", color = "black") +
+    geom_density(color = "darkred", linewidth = 1, adjust = 1) +
+    theme_bw() +
+    labs(title = "Is the data normal?")
+
+  n_obs <- length(stat_vec)
+  
+  if (n_obs >= 3 && n_obs <= 5000) {
+    b <- shapiro.test(stat_vec)
+    p_val_b <- b$p.value
+    lbl <- if (p_val_b <= 0.1) "** Not normal" else "* Normally Distributed"
+    
+    a1 <- a + annotate(
+      "text", 
+      x = min(stat_vec, na.rm = TRUE), 
+      y = Inf, 
+      label = paste0(lbl, " (p = ", round(p_val_b, 3), ")"),
+      vjust = 2, 
+      hjust = 0, 
+      size = 4,
+      fontface = "bold"
+    )
+  } else if (n_obs > 5000) {
+        
+    a1 <- a   
+  } else {
+    a1 <- a + labs(subtitle = "N < 3: Insufficient data for Shapiro-Wilk test")
+  }
+ 
+  a2 <- df1 |>
+    ggplot(aes(sample = {{ stat }})) +
+    stat_qq() +
+    stat_qq_line(color = "darkred", linewidth = 1) +
+    theme_bw() +
+    labs(title = "Q-Q Plot", x = "Theoretical Quantiles", y = "Sample Quantiles")
+
+  a_final <- a1 / a2
+  return(a_final)
+}
+
+
+```
+
+**For live biomass in mixed evergreen forests**   
+
+```{r}
+bio <- normal(totals, metric_need = TRUE, metric = 1, status = 0, stat = TotalBiomass)
+bio_bc <- normal(totals,  metric_need = TRUE, metric = 1, status = 0, stat = BCTotalBiomass)
+
+bio | bio_bc
+
+
+```
+
+**For dead biomass in mixed evergreen forests**   
+
+```{r}
+bio_dead <- normal(totals,  metric_need = TRUE, metric = 1, status = 1, stat = TotalBiomass)
+bio_bc_dead <- normal(totals, metric_need = TRUE, metric = 1, status =  1, stat = BCTotalBiomass)
+
+bio_dead | bio_bc_dead
+
+
+```
+
+**For living biomass in redwood forests**   
+
+```{r}
+bio <- normal(totals, metric_need = TRUE, metric = 2, status = 0, stat = TotalBiomass)
+bio_bc <- normal(totals, metric_need = TRUE, metric = 2, status = 0, stat = BCTotalBiomass)
+
+bio | bio_bc
+
+
+```
+
+**For dead biomass in redwood forests**   
+
+```{r}
+bio_dead <- normal(totals, metric_need = TRUE, metric = 2, status = 1, stat = TotalBiomass)
+bio_bc_dead <- normal(totals, metric = 2, status = 1, stat = BCTotalBiomass)
+
+bio_dead | bio_bc_dead
+
+
+```
+
+
+##### Across snag host biomass        
+
+```{r}
+m <- load_meta() |> select(Plot, SampleYear, Snag_Host_Biomass) |>
+  select(Plot, SampleYear, Snag_Host_Biomass) |>
+  filter(Snag_Host_Biomass > 0)
+
+m$BCHostBiomass <- box_cox(m$Snag_Host_Biomass) 
+
+m_dead    <- normal(m, metric_need = FALSE, stat = Snag_Host_Biomass)
+m_bc_dead <- normal(m, metric_need = FALSE, stat = BCHostBiomass)
+
+# Combine side-by-side
+m_dead | m_bc_dead
+
+
+
+```
+
+##### Across cwd host biomass        
+
+```{r}
+m <- load_meta() |> select(Plot, SampleYear, CWD_Host_Biomass) |>
+  select(Plot, SampleYear, CWD_Host_Biomass) |>
+  filter(CWD_Host_Biomass > 0)
+
+m$BCCWDHostBiomass <- box_cox(m$CWD_Host_Biomass) 
+
+m_dead    <- normal(m, metric_need = FALSE, stat = CWD_Host_Biomass)
+m_bc_dead <- normal(m, metric_need = FALSE, stat = BCCWDHostBiomass)
+
+# Combine side-by-side
+m_dead | m_bc_dead
+
+
+
+```
+
+
+#### Across redwood biomass   
+
+```{r}
+species <- no_empty_dis |>
+  select(Plot, Species, SampleYear, Status, ForestType, TotalStem, TotalBiomass) |>
+  inner_join(m, by = c("Plot", "SampleYear")) |>
+  distinct()
+
+
+sese <- species |>
+ filter(Species == "SESE" & Status == 0)
+
+sese$BCTotalBiomass <- box_cox(sese$TotalBiomass) 
+
+sese_live    <- normal(sese, metric_need = TRUE, metric = 2, status = 0, stat = TotalBiomass)
+sese_bc_live <- normal(sese, metric_need = TRUE, metric = 2, status = 0, stat = BCTotalBiomass)
+
+# Combine side-by-side
+sese_live | sese_bc_live
+
+```
+
+#### Across LIDE stem densities   
+
+```{r}
+lide <- species |>
+ filter(Species == "LIDE" & Status == 0) 
+
+lide$BCTotalStem <- box_cox(lide$TotalStem) 
+
+lide_live    <- normal(lide, metric_need = TRUE, metric = 2, status = 0, stat = TotalStem)
+lide_bc_live <- normal(lide, metric_need = TRUE, metric = 2, status = 0, stat = BCTotalStem)
+
+# Combine side-by-side
+lide_live | lide_bc_live
+
+lide2 <- lide |>
+  ungroup() |>
+  filter(Status == 0) |>
+  select(Plot, SampleYear, PRam, Fire, TotalStem, BCTotalStem) |>
+  rename(LideTotalStem = TotalStem, 
+         BCLideTotalStem = BCTotalStem)
+
+
+
+
+
+```
+
+#### Across UMCA stem densities   
+
+```{r}
+umca <- species |>
+ filter(Species == "UMCA")
+
+umca$BCTotalStem <- box_cox(umca$TotalStem) 
+
+umca_live    <- normal(umca, metric_need = TRUE, metric = 2, status = 0, stat = TotalStem)
+umca_bc_live <- normal(umca , metric_need = TRUE, metric = 2, status = 0, stat = BCTotalStem)
+
+# Combine side-by-side
+umca_live | umca_bc_live
+
+umca2 <- umca |>
+  ungroup() |>
+  filter(Status == 0) |>
+  select(Plot, SampleYear, PRam, Fire, TotalStem, BCTotalStem) |>
+  rename(UmcaTotalStem = TotalStem, 
+         BCUmcaTotalStem = BCTotalStem)
+
+```
+
+
+
+
+### Path Analysis   
+Testing the following word equations:
+
+$$
+Redwood living biomass = Fire + Disease + Cwd Biomass
+$$
+
+$$
+Fire = Disease + Cwd Biomass
+$$
+
+$$Disease = CwdBiomass + Bay Laurel Density + LIDE Density$$
+
+
+
+
+```{r}
+#| fig-width: 16
+#| fig-height: 9 
+
+sese_final <- sese |>
+  left_join(umca2, by = c("Plot", "SampleYear", "PRam", "Fire")) |>
+  left_join(lide2, by = c("Plot", "SampleYear", "PRam", "Fire")) |>
+  ungroup() |>
+  mutate(across(c("PRam", "Fire"), as.numeric))
+
+
+intro <- "BCTotalBiomass ~ Fire + PRam + BCCWDHostBiomass
+          Fire ~ PRam + BCCWDHostBiomass
+          PRam ~ BCCWDHostBiomass + BCUmcaTotalStem + BCLideTotalStem
+          "
+
+fit <- sem(model = intro, data = sese_final)
+
+library(semPlot)
+
+summary(fit)
+
+semPaths(fit, what = 'est',  fade = FALSE, edge.label.csv = 0.8, sizeMan = 8, nCharNodes = 0, nCharEdges = 0,
+residuals = TRUE)
+title("Path analysis quantifying CWD fuels as a mediator for disease driven fire impacts to Redwood biomass", line = 3)
+```
+
+
+### Plot level living biomass changes    
 
 ```{r}
 #| fig-width: 16
 #| fig-height: 9 
 
 t <- load_tree()
+p <- load_plot() |> select(Plot, SampleYear, Elevation, Slope, BurnScar, PRam, Fire, tFire, ForestType)
+
+q <- left_join(t, p, by = c("Plot", "SampleYear")) 
+
+q_sums <- q |>
+  filter(ForestType == 2) |>
+  group_by(Plot, Species, SampleYear, Status, PRam, Fire) |>
+  mutate(Status = case_when(
+                            Status == "L" ~ 0,
+                            TRUE ~ 1)) |>
+  summarize(TotalStem = n(),
+            TotalBiomass = sum(Biomass, na.rm = TRUE)) |>
+  distinct() 
+
+
+min_max <- function(df) {
+  df |>
+    group_by(Plot, Species) |>
+    filter(SampleYear %in% c(min(SampleYear), max(SampleYear))) |>
+    mutate(period = if_else(SampleYear == min(SampleYear), "min", "max")) |>
+    ungroup()
+}
+
+ts_look <- function(df, species, metric) {
+  disease_only <- q_sums |>
+    filter(Status == 0 & Fire == 0) 
+    
+  first_last <- disease_only |>
+    filter(PRam == 1) |>
+    min_max()
+    
+
+  p1 <- first_last |> 
+    filter(Species == species) |>
+    ggplot(aes(y = period, x = .data[[metric]], fill = period)) +
+    geom_density_ridges(alpha = 0.5) +
+    scale_fill_viridis_d(option = "C") +
+    labs(title = paste("Comparing", metric, "Across", species, "from 1st inventory date to last"), 
+                       subtitle = "Only in diseased plots with no fire", 
+                       x = metric, y = "Period", color = "Time Period") +
+    theme_bw() 
+
+  
+  p2 <- disease_only |> 
+    filter(Species == species) |>
+    ggplot(aes(y = PRam, x = .data[[metric]], fill = PRam)) +
+    geom_density_ridges(alpha = 0.5) +
+    scale_fill_viridis_d(option = "C") +
+    labs(title = paste("Comparing", metric, "Across", species, "with disease presence"), 
+                       subtitle = "Only in diseased plots with no fire", 
+                       x = metric, y = "Period", color = "Disease") +
+
+    theme_bw() 
+
+  p1 / p2
+
+}
+ 
+
+ts_look(q_sums, "LIDE", "TotalStem")
+
+l <- q |>
+  distinct() |>
+  group_by(Plot, ForestType, SampleYear) |>
+  summarize(AverageDensity =  n_distinct(StemId, na.rm = TRUE)) |>
+  ungroup() |>
+  drop_na(ForestType) |>
+  mutate(ForestType = case_when(
+                                ForestType == 1 ~ "Mixed Evergreen",
+                                TRUE ~ "Redwood")) |>
+  ggplot(aes(y =  ForestType, x = AverageDensity, fill = ForestType)) +
+  geom_density_ridges(rel_min_height = 0.005, scale = 20, alpha = 0.5, quantile_lines = FALSE,
+                      calc_ecdf = TRUE,
+                      geom = "density_ridges_gradient") +
+  scale_fill_viridis_d(option = "C") +
+  labs(title = "Comparing Stand Density Across Forest Types", x = "Stand Density", y = "Forest Type",
+  color = "Forest Type") +
+  theme_bw() 
+
+
+
+
+p <- t |>
+  filter(Species %in% c("SESE", "QUAG", "LIDE")) |>
+  distinct() |> 
+  ggplot(aes(y = Species, x = DBH, color = Species, fill = Species)) +
+  geom_density_ridges(scale = 0.6) +
+  theme_bw() +
+  scale_fill_viridis_d(option = "D") +
+  scale_color_viridis_d(option = "D") 
+
 
 l_sum <- function(df, live = TRUE) {
   if (live == TRUE) {
@@ -605,74 +889,18 @@ cwd_bio <- load_meta() |> select(Plot, SampleYear, CWD_Ha_Biomass)
 
 classes <- left_join(cwd_bio, standing_bio, by = c("Plot", "SampleYear"))
 
-classes |>
-  select(Plot, SampleYear, CWD_Ha_Biomass, TotalLiveBiomass, TotalSnagBiomass) |>
-  pivot_longer(cols = CWD_Ha_Biomass:TotalSnagBiomass, names_to = "Type", values_to = "Biomass") |>
-  ggplot(aes(x = Biomass)) +
-  geom_histogram() +
-  facet_wrap(~Type, scales = "free_x") + 
-  theme_bw()
 
-classes |>
-  pivot_longer(cols = c(CWD_Ha_Biomass, TotalLiveBiomass,TotalSnagBiomass), names_to = "Type", values_to = "Biomass") |>
-  drop_na()|>
-  ggplot(aes(x = Biomass, fill = Species)) +
-  geom_histogram(position = "stack", alpha = 0.5) +
-  facet_wrap(~Type, scales = "free_x") + 
-  theme_bw()
+p <-  load_plot()
 
+pools <- classes |>
+  left_join(p |> select(Plot, SampleYear, BurnScar, ForestType,
+                                        PRam, Fire, tFire), 
+            by = c("Plot", "SampleYear"))
 
-
-
-
-classes |>
-  select(Plot, SampleYear, CWD_Ha_Biomass, TotalLiveBiomass, TotalSnagBiomass) |>
-  mutate(across(c(CWD_Ha_Biomass, TotalLiveBiomass, TotalSnagBiomass), 
-                ~log1p(.x), 
-                .names = "Log{.col}")) |>
-  distinct() |>
-  pivot_longer(cols = LogCWD_Ha_Biomass:LogTotalSnagBiomass, names_to = "Type", values_to = "Biomass") |>
-  ggplot(aes(x = SampleYear, y = Biomass, color = Type)) +
-  geom_point() +
-  geom_smooth(method = "loess") +
-  theme_bw()
 
 ```
 
 
-
-```{r}
-#| eval: false
-
-# 426 error in pram status should be pram == 1, bug in cwd_ha_biomass not at species level (sese lide the same)
-p <-  load_plot() |> filter(Plot == "BS053") 
-
-sb <- standing_bio |> filter(Plot == "BS053") 
-
-cb <- classes |>  filter(Plot == "BS053") |> distinct() 
-
-p1 <- cb |>
-  ggplot(aes(x = SampleYear, y = LiveBiomass, color = Species)) +
-  geom_point() +
-  geom_smooth(method = "loess") +
-  theme_bw()
-
-p2 <- cb |>
-  ggplot(aes(x = SampleYear, y = SnagBiomass, color = Species)) +
-  geom_point() +
-  geom_smooth(method = "loess") +
-  theme_bw()
-
-p3 <- cb |>
-  ggplot(aes(x = SampleYear, y = CWD_Ha_Biomass)) +
-  geom_point() +
-  geom_smooth(method = "loess") +
-  theme_bw()
-
-
-p1 / p2 / p3 
-
-```
 
 **How have plot's biomass levels changed from the first to most recent inventory?**     
 - **How have biomass levels changed across species?**     
@@ -801,17 +1029,46 @@ bio_model <- lmer(TotalLiveBiomass ~  SampleYear + slope + elevation + precipita
 
 meta_bio$predictedBio <- predict(bio_model, newdata = meta_bio)
 
-# Regression metrics
-rmse_test <- sqrt(mean((meta_bio$predictedBio - meta_bio$TotalLiveBiomass)^2))
-mae_test  <- mean(abs(meta_bio$predictedBio - meta_bio$TotalLiveBiomass))
-r2_test   <- cor(meta_bio$predictedBio, meta_bio$TotalLiveBiomass)^2
-aic <- AIC(bio_model)
- 
-print(paste("Test RMSE:", round(rmse_test, 3)))
-print(paste("Test MAE:", round(mae_test, 3)))
-print(paste("Test R-squared:", round(r2_test, 3)))
-print(paste("Test AIC:", round(aic, 3)))
 
+model_results <- function(df, y, preds, model) {
+  rmse_test <- sqrt(mean((y - preds)^2))
+  r2_test   <- cor(y, preds)^2
+  aic <- AIC(model)
+  
+  results <- data.frame(
+    "RMSE" = round(rmse_test, 3),
+    "R-squared" = round(r2_test, 3),
+    "AIC" = round(aic, 3),
+    check.names = FALSE
+  )
+  
+  resid_vals <- resid(model)
+  
+  p1 <- df |>
+    mutate(resid = y - preds) |>
+    ggplot(aes(x = y, y = resid)) +
+    geom_point() +
+    geom_hline(yintercept = 0, linetype = "dashed", color = "red") +
+    labs(x = "Observed", y = "Residuals", title = "Residuals vs Observed") +
+    theme_bw()
+  
+  p2 <- ggplot(data.frame(resid = resid_vals), aes(sample = resid)) +
+    stat_qq() +
+    stat_qq_line(color = "red") +
+    labs(title = "Normal Q-Q") +
+    theme_bw()
+  
+  z <- p1 / p2
+  print(z)
+  
+  print(check_model(model))
+  
+  return(results)
+}
+
+
+model_results(meta_bio, meta_bio$TotalLiveBiomass,
+              meta_bio$predictedBio, bio_model) 
 ```
 
 
@@ -939,6 +1196,39 @@ anim_save("biomass_animation_fire.gif", animation = anim)
 
 
 ![](biomass_animation_fire.gif)
+
+
+### Disease impacts on coarse woody debris 
+**Is there higher CWD in diseased stands with no recent fire?**     
+- Filter BurnScar == "control", PRam = 1
+
+```{r}
+disease <- pools |>
+  filter(BurnScar == "control") |>
+  distinct() 
+
+disease |>
+  ggplot(aes(x = PRam, y = CWD_Ha_Biomass, color = PRam)) +
+  geom_boxplot() +
+  geom_jitter() +
+  theme_bw() +
+  scale_color_viridis_d(option = "H") +
+  labs(x = "Disease Status", subtitle = "Mg CWD Biomass per hectare", color = "PRam")
+
+disease_model <- lmer(log(CWD_Ha_Biomass) ~ PRam + (1 | SampleYear) + (1 | Plot), data = disease)
+
+summary(disease_model)
+
+disease$predictedCwd <- predict(disease_model, newdata = disease)
+
+model_results(disease, disease$CWD_Ha_Biomass, disease$predictedCwd, disease_model)
+
+
+```
+
+#### Results    
+Disease presence is a significant predictor of CWD biomass in unburnt stands (p = 0.00059). When controlling for plot and year, disease presence yields 0.93 additional Mg CWD biomass per hectare. Normalizing the CWD response variable by taking the natural log reduces AIC from 736 to 189 but RMSE increases and R2 decreases. The diagnostic plots above indicate taking the log of CWD Biomass yields the best model.     
+
 
 
 
