@@ -657,9 +657,11 @@ sese_live | sese_bc_live
 
 ```{r}
 lide <- species |>
- filter(Species == "LIDE" & Status == 0) 
+ filter(Species == "LIDE" & Status == 0) |>
+ rename(LideSnagBiomass = TotalBiomass)
 
 lide$BCTotalStem <- box_cox(lide$TotalStem) 
+lide$LideSnagBiomassNorm <- box_cox(lide$LideSnagBiomass)
 
 lide_live    <- normal(lide, metric_need = TRUE, metric = 2, status = 0, stat = TotalStem)
 lide_bc_live <- normal(lide, metric_need = TRUE, metric = 2, status = 0, stat = BCTotalStem)
@@ -670,9 +672,7 @@ lide_live | lide_bc_live
 lide2 <- lide |>
   ungroup() |>
   filter(Status == 0) |>
-  select(Plot, SampleYear, PRam, Fire, TotalStem, BCTotalStem) |>
-  rename(LideTotalStem = TotalStem, 
-         BCLideTotalStem = BCTotalStem)
+  select(Plot, SampleYear, PRam, Fire, LideSnagBiomass, LideSnagBiomassNorm) 
 
 
 
@@ -704,20 +704,42 @@ umca2 <- umca |>
 ```
 
 
+#### Final dataset      
 
+**47 unique plots with redwood living biomass data, tanoak snag data and cwd data.**      
 
-### Path Analysis   
+```{r}
+sese_final <- sese |>
+  left_join(umca2, by = c("Plot", "SampleYear", "PRam", "Fire")) |>
+  left_join(lide2, by = c("Plot", "SampleYear", "PRam", "Fire")) |>
+  ungroup() |>
+  mutate(across(c("PRam", "Fire"), as.numeric)) |>
+  left_join(p |> select(Plot, Elevation, Slope, BurnScar), 
+                        by = "Plot") |>
+  rename(CwdHostBiomassNorm = BCCWDHostBiomass,
+         SeseBiomassNorm = BCTotalBiomass,
+        UmcaStemDensityNorm = BCUmcaTotalStem)
+
+```
+
+### Disease and fire impacts on redwood living biomass  
+
+#### Path Analysis   
 Testing the following word equations:
 
 $$
-Redwood living biomass = Fire + Disease + Cwd Biomass
+Redwood living biomass = Tanoak Snag Biomass + Cwd Biomass + Fire + Disease + Elevation + Slope 
 $$
 
+
 $$
-Fire = Disease + Cwd Biomass
+Tanoak Snag Biomass = Bay Laurel Density + Disease  
 $$
 
-$$Disease = CwdBiomass + Bay Laurel Density + LIDE Density$$
+
+$$
+Cwd Biomass = Tanoak Snag Biomass + Bay Laurel Density + Fire + Disease
+$$
 
 
 
@@ -726,29 +748,136 @@ $$Disease = CwdBiomass + Bay Laurel Density + LIDE Density$$
 #| fig-width: 16
 #| fig-height: 9 
 
-sese_final <- sese |>
-  left_join(umca2, by = c("Plot", "SampleYear", "PRam", "Fire")) |>
-  left_join(lide2, by = c("Plot", "SampleYear", "PRam", "Fire")) |>
-  ungroup() |>
-  mutate(across(c("PRam", "Fire"), as.numeric))
-
-
-intro <- "BCTotalBiomass ~ Fire + PRam + BCCWDHostBiomass
-          Fire ~ PRam + BCCWDHostBiomass
-          PRam ~ BCCWDHostBiomass + BCUmcaTotalStem + BCLideTotalStem
+intro <- "SeseBiomassNorm ~ CwdHostBiomassNorm + LideSnagBiomassNorm + Fire + PRam + Elevation + Slope
+          LideSnagBiomassNorm ~ UmcaStemDensityNorm + PRam 
+          CwdHostBiomassNorm ~ UmcaStemDensityNorm + LideSnagBiomassNorm + PRam + Fire
           "
 
 fit <- sem(model = intro, data = sese_final)
 
 library(semPlot)
 
-summary(fit)
+summary(fit, rsquare = TRUE, fit.measures = TRUE)
 
-semPaths(fit, what = 'est',  fade = FALSE, edge.label.csv = 0.8, sizeMan = 8, nCharNodes = 0, nCharEdges = 0,
-residuals = TRUE)
-title("Path analysis quantifying CWD fuels as a mediator for disease driven fire impacts to Redwood biomass", line = 3)
+
+png("./exports/sese-path.png", width = 1400, height = 1000, res = 150)
+par(mar = c(1, 1, 6, 1)) 
+
+semPaths(fit, what = "est", fade = FALSE, edge.label.cex = 0.8,
+         sizeMan = 10,          
+         nCharNodes = 0, nCharEdges = 0,
+         residuals = TRUE,
+         mar = c(6, 6, 8, 6)) 
+
+title("Path analysis quantifying CWD fuels as a mediator for disease driven fire impacts to Redwood biomass", 
+      line = 4, cex.main = 0.9)
+dev.off()
 ```
 
+
+#### Mixed effects modeling  
+
+Using the following word equation:      
+
+$$
+Redwood living biomass = Tanoak Snag Biomass + Cwd Biomass + Fire + Disease + Elevation + Slope + (1 | Plot) + (1 |SampleYear)
+$$
+
+
+```{r}
+#| fig-width: 16
+#| fig-height: 14
+
+
+bio_mixed <- lmer(
+                  SeseBiomassNorm ~ CwdHostBiomassNorm + LideSnagBiomassNorm + Fire + PRam + Elevation + Slope  +
+                    (1 | Plot) + (1 |SampleYear),
+                  data = sese_final)
+
+summary(bio_mixed)
+
+check_model(bio_mixed)
+
+```
+
+ 
+
+##### How do the models compare?    
+
+```{r}
+comp_me <- function(m1, m2, title1, title2) {
+  df <- data.frame(
+                   Model = c(title1, title2),
+                   AIC = c(AIC(m1), AIC(m2))) |>
+  gt()
+  
+  return(df)
+
+}
+
+
+
+comp_me(m1 = fit, m2 = bio_mixed, title1 = "Path analysis", title2 = "Mixed effects model")
+
+```
+
+
+#### Survival analysis
+
+Using the following word equation:      
+
+$$
+Redwood stem mortality = Tanoak Snag Biomass + Cwd Biomass + DBH + Fire + Disease + Elevation + Slope + t 
+$$
+
+
+
+
+```{r}
+sese_stem <- t |> filter(Species == "SESE") |>
+  rename(status = Mortality) |>
+  mutate(status = case_when(
+                            status == 0 ~ 1,
+                            TRUE ~ 2),
+  t = SampleYear - 2006) |>
+  select(Plot, Species, SampleYear, DBH, status, t)
+
+
+sese_plot <- sese_final |> 
+  select(Plot, SampleYear, Fire, PRam, CwdHostBiomassNorm, LideSnagBiomassNorm, Elevation,  Slope)
+
+
+sese_sa <- left_join(sese_plot, sese_stem, by = c("Plot", "SampleYear"))
+
+library(survival)
+library(survminer)
+
+f <- Surv(t, status) ~ CwdHostBiomassNorm + LideSnagBiomassNorm + Fire + DBH + PRam + Elevation + Slope
+
+fits <- list(
+  exponential   = survreg(f, data = sese_sa, dist = "exponential"),
+  weibull       = survreg(f, data = sese_sa, dist = "weibull"),
+  lognormal     = survreg(f, data = sese_sa, dist = "lognormal"),
+  loglogistic   = survreg(f, data = sese_sa, dist = "loglogistic")
+)
+
+aic <- sapply(fits, AIC)
+tab <- data.frame(distribution = names(aic), AIC = round(aic, 1))
+tab <- tab[order(tab$AIC), ]
+tab$delta_AIC <- round(tab$AIC - min(tab$AIC), 1)
+
+tab |>
+  gt()
+
+exp_sa <- survreg(f, data = sese_sa, dist = "weibull")
+
+
+summary(exp_sa) 
+
+sese_sa$PredictedTimeDeath <- predict(exp_sa, newdata = sese_sa, type = "response")
+
+
+```
 
 ### Plot level living biomass changes    
 
