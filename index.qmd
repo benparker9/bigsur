@@ -760,7 +760,7 @@ library(semPlot)
 summary(fit, rsquare = TRUE, fit.measures = TRUE)
 
 
-png("./exports/sese-path.png", width = 1400, height = 1000, res = 150)
+#png("./exports/sese-path.png", width = 1400, height = 1000, res = 150)
 par(mar = c(1, 1, 6, 1)) 
 
 semPaths(fit, what = "est", fade = FALSE, edge.label.cex = 0.8,
@@ -771,7 +771,7 @@ semPaths(fit, what = "est", fade = FALSE, edge.label.cex = 0.8,
 
 title("Path analysis quantifying CWD fuels as a mediator for disease driven fire impacts to Redwood biomass", 
       line = 4, cex.main = 0.9)
-dev.off()
+#dev.off()
 ```
 
 
