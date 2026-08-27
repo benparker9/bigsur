@@ -15,7 +15,7 @@ execute:
 
 ![](./exports/red.jpg)
 
-### Main research questions      
+## Main research questions      
 
 i) How has carbon biomass changed due to fire and disease throughout the inventory? How has species (Tanoak, Coast Live Oak, Redwood, Bay Laurel) density and biomass been altered?    
 
@@ -33,15 +33,13 @@ vi) Which factors, size, species, or burn status, influence CWD decomposition ra
 
 
 
-### Fire/disease graphical model    
+## Fire/disease graphical model    
 Through my research, I aim to quantify the fluxes between three main carbon pools -- living biomass, snags and CWD. Below I outline the proposed carbon cycle between these main pools.   
 
 ![](./exports/fd-cycle.png)
 
 
 
-
-## Methods      
 
 #### Libraries Needed     
 
@@ -68,10 +66,16 @@ library(performance)
 library(lavaan)
 library(bestNormalize)
 library(ggridges)
+library(ggcube)
+library(ggcube)
+library(geometry)
+library(fixest)
+library(plm)
+
 ```
 
 
-### Random Sampling Data Exploration      
+## Random Sampling Data Exploration      
 Below, I seek to understand the sampling bias throughout the inventory. I use monte carlo simulation to test "randomness" by simulating a random poisson distribution and compare z-scores between our dataset and the simulated dataset.    
 
 
@@ -159,7 +163,7 @@ comp_hist |>
 ```
 
 
-### Principle Component Analysis     
+## Principle Component Analysis     
 
 **Objective**   
 - Better understand variability within each dataset  
@@ -341,7 +345,7 @@ pca_me(cwd)
 
 ```
 
-### Analysis of State Factor's Influence on Forest Type   
+## Analysis of State Factor's Influence on Forest Type   
 Aim to answer:    
 
 **Which state factors drive forest type?**    
@@ -441,7 +445,7 @@ comps
 
     
 
-### Understanding stand density and biomass distributions      
+## Understanding stand density and biomass distributions      
 
 ##### Across all the data  
 
@@ -591,8 +595,7 @@ bio_dead | bio_bc_dead
 
 ```
 
-
-##### Across snag host biomass        
+**Across snag host biomass**            
 
 ```{r}
 m <- load_meta() |> select(Plot, SampleYear, Snag_Host_Biomass) |>
@@ -611,7 +614,7 @@ m_dead | m_bc_dead
 
 ```
 
-##### Across cwd host biomass        
+**Across cwd host biomass**        
 
 ```{r}
 m <- load_meta() |> select(Plot, SampleYear, CWD_Host_Biomass) |>
@@ -631,7 +634,7 @@ m_dead | m_bc_dead
 ```
 
 
-#### Across redwood biomass   
+**Across redwood living biomass**   
 
 ```{r}
 species <- no_empty_dis |>
@@ -653,7 +656,7 @@ sese_live | sese_bc_live
 
 ```
 
-#### Across LIDE stem densities   
+**Across LIDE biomass**         
 
 ```{r}
 lide <- species |>
@@ -680,7 +683,7 @@ lide2 <- lide |>
 
 ```
 
-#### Across UMCA stem densities   
+**Across UMCA stem densities**         
 
 ```{r}
 umca <- species |>
@@ -713,171 +716,30 @@ sese_final <- sese |>
   left_join(umca2, by = c("Plot", "SampleYear", "PRam", "Fire")) |>
   left_join(lide2, by = c("Plot", "SampleYear", "PRam", "Fire")) |>
   ungroup() |>
-  mutate(across(c("PRam", "Fire"), as.numeric)) |>
-  left_join(p |> select(Plot, Elevation, Slope, BurnScar), 
-                        by = "Plot") |>
+  left_join(p |> select(Plot, SampleYear, Elevation, Slope, BurnScar, tFire), 
+                        by = c("Plot", "SampleYear")) |>
   rename(CwdHostBiomassNorm = BCCWDHostBiomass,
+         CwdHostBiomass = CWD_Host_Biomass,
+         SeseBiomass = TotalBiomass,
          SeseBiomassNorm = BCTotalBiomass,
-        UmcaStemDensityNorm = BCUmcaTotalStem)
-
-```
-
-### Disease and fire impacts on redwood living biomass  
-
-#### Path Analysis   
-Testing the following word equations:
-
-$$
-Redwood living biomass = Tanoak Snag Biomass + Cwd Biomass + Fire + Disease + Elevation + Slope 
-$$
-
-
-$$
-Tanoak Snag Biomass = Bay Laurel Density + Disease  
-$$
-
-
-$$
-Cwd Biomass = Tanoak Snag Biomass + Bay Laurel Density + Fire + Disease
-$$
+         UmcaStemDensity = UmcaTotalStem,
+        UmcaStemDensityNorm = BCUmcaTotalStem) 
 
 
 
 
-```{r}
-#| fig-width: 16
-#| fig-height: 9 
+sese_pa <- sese_final |>
+  mutate(across(c("PRam", "Fire"), as.numeric)) |> distinct()
 
-intro <- "SeseBiomassNorm ~ CwdHostBiomassNorm + LideSnagBiomassNorm + Fire + PRam + Elevation + Slope
-          LideSnagBiomassNorm ~ UmcaStemDensityNorm + PRam 
-          CwdHostBiomassNorm ~ UmcaStemDensityNorm + LideSnagBiomassNorm + PRam + Fire
-          "
-
-fit <- sem(model = intro, data = sese_final)
-
-library(semPlot)
-
-summary(fit, rsquare = TRUE, fit.measures = TRUE)
-
-
-#png("./exports/sese-path.png", width = 1400, height = 1000, res = 150)
-par(mar = c(1, 1, 6, 1)) 
-
-semPaths(fit, what = "est", fade = FALSE, edge.label.cex = 0.8,
-         sizeMan = 10,          
-         nCharNodes = 0, nCharEdges = 0,
-         residuals = TRUE,
-         mar = c(6, 6, 8, 6)) 
-
-title("Path analysis quantifying CWD fuels as a mediator for disease driven fire impacts to Redwood biomass", 
-      line = 4, cex.main = 0.9)
-#dev.off()
-```
-
-
-#### Mixed effects modeling  
-
-Using the following word equation:      
-
-$$
-Redwood living biomass = Tanoak Snag Biomass + Cwd Biomass + Fire + Disease + Elevation + Slope + (1 | Plot) + (1 |SampleYear)
-$$
-
-
-```{r}
-#| fig-width: 16
-#| fig-height: 14
-
-
-bio_mixed <- lmer(
-                  SeseBiomassNorm ~ CwdHostBiomassNorm + LideSnagBiomassNorm + Fire + PRam + Elevation + Slope  +
-                    (1 | Plot) + (1 |SampleYear),
-                  data = sese_final)
-
-summary(bio_mixed)
-
-check_model(bio_mixed)
-
-```
-
- 
-
-##### How do the models compare?    
-
-```{r}
-comp_me <- function(m1, m2, title1, title2) {
-  df <- data.frame(
-                   Model = c(title1, title2),
-                   AIC = c(AIC(m1), AIC(m2))) |>
-  gt()
-  
-  return(df)
-
-}
-
-
-
-comp_me(m1 = fit, m2 = bio_mixed, title1 = "Path analysis", title2 = "Mixed effects model")
-
-```
-
-
-#### Survival analysis
-
-Using the following word equation:      
-
-$$
-Redwood stem mortality = Tanoak Snag Biomass + Cwd Biomass + DBH + Fire + Disease + Elevation + Slope + t 
-$$
-
-
-
-
-```{r}
-sese_stem <- t |> filter(Species == "SESE") |>
-  rename(status = Mortality) |>
-  mutate(status = case_when(
-                            status == 0 ~ 1,
-                            TRUE ~ 2),
-  t = SampleYear - 2006) |>
-  select(Plot, Species, SampleYear, DBH, status, t)
-
-
-sese_plot <- sese_final |> 
-  select(Plot, SampleYear, Fire, PRam, CwdHostBiomassNorm, LideSnagBiomassNorm, Elevation,  Slope)
-
-
-sese_sa <- left_join(sese_plot, sese_stem, by = c("Plot", "SampleYear"))
-
-library(survival)
-library(survminer)
-
-f <- Surv(t, status) ~ CwdHostBiomassNorm + LideSnagBiomassNorm + Fire + DBH + PRam + Elevation + Slope
-
-fits <- list(
-  exponential   = survreg(f, data = sese_sa, dist = "exponential"),
-  weibull       = survreg(f, data = sese_sa, dist = "weibull"),
-  lognormal     = survreg(f, data = sese_sa, dist = "lognormal"),
-  loglogistic   = survreg(f, data = sese_sa, dist = "loglogistic")
-)
-
-aic <- sapply(fits, AIC)
-tab <- data.frame(distribution = names(aic), AIC = round(aic, 1))
-tab <- tab[order(tab$AIC), ]
-tab$delta_AIC <- round(tab$AIC - min(tab$AIC), 1)
-
-tab |>
-  gt()
-
-exp_sa <- survreg(f, data = sese_sa, dist = "weibull")
-
-
-summary(exp_sa) 
-
-sese_sa$PredictedTimeDeath <- predict(exp_sa, newdata = sese_sa, type = "response")
+sese_mixed <- sese_final |> distinct()
 
 
 ```
+
+
+
+## Plot level summary statistics 
+
 
 ### Plot level living biomass changes    
 
@@ -1327,7 +1189,227 @@ anim_save("biomass_animation_fire.gif", animation = anim)
 ![](biomass_animation_fire.gif)
 
 
-### Disease impacts on coarse woody debris 
+
+
+
+
+
+## Disease and fire impacts on living biomass  
+
+
+### Redwood     
+
+### Path Analysis   
+Testing the following word equations:
+
+$$
+Redwood living biomass = Tanoak Snag Biomass + Cwd Biomass + Fire + Disease + Elevation + Slope 
+$$
+
+
+$$
+Tanoak Snag Biomass = Bay Laurel Density + Disease  
+$$
+
+
+$$
+Cwd Biomass = Tanoak Snag Biomass + Bay Laurel Density + Fire + Disease
+$$
+
+
+
+
+```{r}
+#| fig-width: 16
+#| fig-height: 9 
+
+intro <- "SeseBiomassNorm ~ CwdHostBiomassNorm + LideSnagBiomassNorm + Fire + PRam + Elevation + Slope + tFire
+          LideSnagBiomassNorm ~ UmcaStemDensityNorm + PRam 
+          CwdHostBiomassNorm ~ UmcaStemDensityNorm + LideSnagBiomassNorm + PRam + Fire + tFire
+          "
+
+fit <- sem(model = intro, data = sese_final)
+
+
+
+library(semPlot)
+
+summary(fit, rsquare = TRUE, fit.measures = TRUE)
+
+
+#png("./exports/sese-path.png", width = 1400, height = 1000, res = 150)
+par(mar = c(1, 1, 6, 1)) 
+
+semPaths(fit, what = "est", fade = FALSE, edge.label.cex = 0.8,
+         sizeMan = 10,          
+         nCharNodes = 0, nCharEdges = 0,
+         residuals = TRUE,
+         mar = c(6, 6, 8, 6)) 
+
+title("Path analysis quantifying CWD fuels as a mediator for disease driven fire impacts to Redwood biomass", 
+      line = 4, cex.main = 0.9)
+#dev.off()
+```
+
+
+### Mixed effects modeling  
+
+Using the following word equation:      
+
+$$
+Redwood living biomass = Tanoak Snag Biomass + Cwd Biomass + Fire + Disease + Elevation + Slope + (1 | Plot) + (1 |SampleYear)
+$$
+
+
+```{r}
+#| fig-width: 16
+#| fig-height: 14
+
+
+sese_final$ElevationNorm <- box_cox(sese_final$Elevation)
+sese_final$SlopeNorm <- box_cox(sese_final$Slope)
+sese_final$tFireNorm <- box_cox(sese_final$tFire)
+
+
+
+bio_mixed <- lmer(
+                  SeseBiomassNorm ~ CwdHostBiomassNorm + LideSnagBiomassNorm + Fire + PRam + ElevationNorm + SlopeNorm  + tFire +
+                    (1 | Plot) + (1 |SampleYear),
+                  data = sese_final)
+
+summary(bio_mixed)
+
+check_model(bio_mixed)
+
+
+
+sese_final$predictedSeseBiomass <- predict(bio_mixed, newdata = sese_final, 
+                                           allow.new.levels = TRUE)
+
+
+c <- sese_final |>
+  ggplot(aes(x = LideSnagBiomassNorm, y = CwdHostBiomassNorm, z = SeseBiomassNorm)) +
+  geom_point() +
+  geom_smooth_3d(aes(z = predictedSeseBiomass),
+                  color = "black", grid = "equilateral") +
+  coord_3d(light = NULL, dist = 3, yaw = -100, pitch = 10) +
+  scale_fill_viridis_c()
+
+c
+
+```
+
+### Within estimator designs (fixed effect model)      
+
+```{r}
+#| fig-width: 16
+#| fig-height: 14
+
+
+model_twoway <- feols(SeseBiomassNorm ~ CwdHostBiomassNorm + LideSnagBiomassNorm + Fire + PRam + tFire | Plot + SampleYear,
+                      data = sese_final)
+
+summary(model_twoway) 
+
+sese_final$predictedSeseBiomassF <- predict(model_twoway, newdata = sese_final, 
+                                           allow.new.levels = TRUE)
+
+c <- sese_final |>
+  ggplot(aes(x = LideSnagBiomassNorm, y = CwdHostBiomassNorm, z = SeseBiomassNorm)) +
+  geom_point() +
+  geom_smooth_3d(aes(z = predictedSeseBiomassF),
+                  color = "black", grid = "equilateral") +
+  coord_3d(light = NULL, dist = 3, yaw = -100, pitch = 10) +
+  scale_fill_viridis_c()
+
+c
+
+
+```
+
+
+
+
+##### How do the models compare?    
+
+```{r}
+comp_me <- function(m1, m2, title1, title2, m3, title3) {
+  df <- data.frame(
+                   Model = c(title1, title2, title3),
+                   AIC = c(AIC(m1), AIC(m2), AIC(m3))) |>
+  gt()
+  
+  return(df)
+
+}
+
+
+
+comp_me(m1 = fit, m2 = bio_mixed, m3 = model_twoway, title1 = "Path analysis", title2 = "Mixed effects model", title3 = "Fixed effects model")
+
+```
+
+
+### Survival analysis
+
+Using the following word equation:      
+
+$$
+Redwood stem mortality = Tanoak Snag Biomass + Cwd Biomass + DBH + Fire + Disease + Elevation + Slope + t 
+$$
+
+
+
+
+```{r}
+#| fig-width: 16
+#| fig-height: 14
+
+
+sese_stem <- t |> filter(Species == "SESE") |>
+  rename(status = Mortality) |>
+  mutate(status = case_when(
+                            status == 0 ~ 1,
+                            TRUE ~ 2),
+  t = SampleYear - 2006) |>
+  select(Plot, Species, SampleYear, DBH, status, t)
+
+
+sese_plot <- sese_final |> 
+  select(Plot, SampleYear, Fire, PRam, CwdHostBiomass, CwdHostBiomassNorm, LideSnagBiomass, LideSnagBiomassNorm, Elevation,  Slope)
+
+
+sese_sa <- left_join(sese_plot, sese_stem, by = c("Plot", "SampleYear"))
+
+library(survival)
+library(survminer)
+
+f <- Surv(t, status) ~ CwdHostBiomassNorm + LideSnagBiomassNorm + Fire + DBH + PRam + Elevation + Slope
+
+exp_sa <- survreg(f, data = sese_sa, dist = "weibull")
+
+
+summary(exp_sa) 
+
+sese_sa$PredictedTimeDeath <- predict(exp_sa, newdata = sese_sa, type = "response")
+
+c <- sese_sa |>
+  ggplot(aes(x = LideSnagBiomassNorm, y = CwdHostBiomassNorm, z = PredictedTimeDeath)) +
+  geom_point() +
+  geom_smooth_3d(aes(z = PredictedTimeDeath),
+                  color = "black", grid = "equilateral") +
+  coord_3d(light = NULL, dist = 4) +
+  scale_fill_viridis_c()
+c
+
+
+
+```
+
+
+
+
+## Disease impacts on coarse woody debris 
 **Is there higher CWD in diseased stands with no recent fire?**     
 - Filter BurnScar == "control", PRam = 1
 
@@ -1354,9 +1436,6 @@ model_results(disease, disease$CWD_Ha_Biomass, disease$predictedCwd, disease_mod
 
 
 ```
-
-#### Results    
-Disease presence is a significant predictor of CWD biomass in unburnt stands (p = 0.00059). When controlling for plot and year, disease presence yields 0.93 additional Mg CWD biomass per hectare. Normalizing the CWD response variable by taking the natural log reduces AIC from 736 to 189 but RMSE increases and R2 decreases. The diagnostic plots above indicate taking the log of CWD Biomass yields the best model.     
 
 
 

@@ -12,12 +12,6 @@ website:
     left:
       - text: "Thesis"
         href: ./index.qmd
-      - text: "Living Biomass"
-        href: ./biomass.qmd
-      - text: "Snag Biomass"
-        href: ./snag-biomass.qmd
-      - text: "CWD"
-        href: ./cwd.qmd
       - text: "Data Cleaning/Package Download"
         href: ./clean.qmd
 
