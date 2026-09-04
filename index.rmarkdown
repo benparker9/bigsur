@@ -1,0 +1,1553 @@
+---
+format: 
+  html:
+    code-tools: true
+    embed-resources: true
+    toc: true 
+    page-layout: full
+editor: visual
+execute:
+  warning: false
+  message: false
+---
+
+# Carbon Dynamics due to Sudden Oak Death and Fire Interactions in Big Sur   
+
+![](./exports/red.jpg)
+
+## Main research questions      
+
+i) How has carbon biomass changed due to fire and disease throughout the inventory? How has species (Tanoak, Coast Live Oak, Redwood, Bay Laurel) density and biomass been altered?    
+
+ii) In diseased stands, when wildfire occurs do we see higher mortality in redwood than in non-diseased stands?    
+
+iii) How does tanoak size interact with pathogen presence to determine mortality rates? Do we see that larger trees die when the pathogen is present?    
+
+      a) How does bay laurel density influence tanoak mortality rates?   
+
+iv) How do state factors influence forest type and snag fall rates?    
+
+v) How does fire and disease influence coarse woody debris mass? How much CWD is burnt in fires? How does pathogen presence impact CWD pools?     
+
+vi) Which factors, size, species, or burn status, influence CWD decomposition rates?   
+
+
+
+## Fire/disease graphical model    
+Through my research, I aim to quantify the fluxes between three main carbon pools -- living biomass, snags and CWD. Below I outline the proposed carbon cycle between these main pools.   
+
+![](./exports/fd-cycle.png)
+
+
+
+
+#### Libraries Needed     
+
+```{r}
+library(leaflet)
+library(gt)
+library(arrow)
+library(stringr)
+library(broom)
+library(gtsummary)
+library(survival)
+library(ggsurvfit)
+library(lme4) 
+library(lmerTest)
+library(knitr)
+library(kableExtra)
+library(ggalluvial)
+library(tidyverse)
+library(bigsurrr)
+library(patchwork)
+library(furrr)
+library(sf)
+library(performance)
+library(lavaan)
+library(bestNormalize)
+library(ggridges)
+library(ggcube)
+library(geometry)
+library(fixest)
+library(plm)
+library(dynamite)
+library(broom)
+library(broom.mixed)
+
+```
+
+## Main Analysis      
+
+### Normalizing the stem data      
+Assuming continuous variables must be normalized for path analysis, mixed effects, fixed effects and survival analysis.     
+
+- Utilizing [orderNorm()](https://www.rdocumentation.org/packages/bestNormalize/versions/1.9.2/topics/orderNorm)     
+
+
+```{r}
+#| fig-width: 16
+#| fig-height: 9 
+
+box_cox <- function(dfCol){
+  pt <- orderNorm(dfCol)
+  
+  n <- pt$x.t
+  return(n)
+}
+
+
+normal <- function(df, stat, metric_need = TRUE, metric = NULL, status = NULL) {
+  
+  if (metric_need) {
+    df1 <- df |> filter(ForestType == metric & Status == status)
+  } else {
+    df1 <- df
+  }
+
+  stat_vec <- df1 |> pull({{ stat }})
+  stat_vec <- na.omit(stat_vec)
+  
+  a <- df1 |>
+    ggplot(aes(x = {{ stat }})) +
+    geom_histogram(aes(y = after_stat(density)), fill = "gray80", color = "black") +
+    geom_density(color = "darkred", linewidth = 1, adjust = 1) +
+    theme_bw() +
+    labs(title = "Is the data normal?")
+
+  n_obs <- length(stat_vec)
+  
+  if (n_obs >= 3 && n_obs <= 5000) {
+    b <- shapiro.test(stat_vec)
+    p_val_b <- b$p.value
+    lbl <- if (p_val_b <= 0.1) "** Not normal" else "* Normally Distributed"
+    
+    a1 <- a + annotate(
+      "text", 
+      x = min(stat_vec, na.rm = TRUE), 
+      y = Inf, 
+      label = paste0(lbl, " (p = ", round(p_val_b, 3), ")"),
+      vjust = 2, 
+      hjust = 0, 
+      size = 4,
+      fontface = "bold"
+    )
+  } else if (n_obs > 5000) {
+        
+    a1 <- a   
+  } else {
+    a1 <- a + labs(subtitle = "N < 3: Insufficient data for Shapiro-Wilk test")
+  }
+ 
+  a2 <- df1 |>
+    ggplot(aes(sample = {{ stat }})) +
+    stat_qq() +
+    stat_qq_line(color = "darkred", linewidth = 1) +
+    theme_bw() +
+    labs(title = "Q-Q Plot", x = "Theoretical Quantiles", y = "Sample Quantiles")
+
+  a_final <- a1 / a2
+  return(a_final)
+}
+
+
+
+
+
+t <- load_tree() |> filter(Species %in% c("SESE", "LIDE", "QUAG", "UMCA"))
+
+
+p <- load_plot() |> select(Plot, SampleYear, Elevation, Slope, BurnScar, PRam, Fire, tFire, ForestType)
+
+q <- left_join(t, p, by = c("Plot", "SampleYear")) |> distinct() 
+
+q_sums <- q |>
+  
+  group_by(Plot, Species, SampleYear, Status, PRam, Fire, ForestType) |>
+  mutate(Status = case_when(
+                            Status == "L" ~ 0,
+                            TRUE ~ 1)) |>
+  summarize(TotalStem = n(),
+            TotalBiomass = (sum(Biomass, na.rm = TRUE) * 20)) |>
+  distinct() 
+
+
+
+q_sums$TotalBiomassNorm <- box_cox(q_sums$TotalBiomass)
+q_sums$TotalStemNorm <- box_cox(q_sums$TotalStem)
+
+
+```
+
+### Extract and transform other datasets    
+
+**Lide snag host biomass**            
+- Only 160 plots with snag LIDE data    
+
+```{r}
+snag_host <- q_sums |>
+  filter(Species == "LIDE" & Status == 1) |>
+  group_by(Plot, SampleYear) |>
+  mutate(LideSnagStemDensity = TotalStem,
+         LideSnagBiomass = TotalBiomass) |>
+  select(Plot, SampleYear, Status, LideSnagStemDensity, LideSnagBiomass)
+
+
+snag_host$LideSnagBiomassNorm <- box_cox(snag_host$LideSnagBiomass)
+snag_host$LideSnagStemDensityNorm <- box_cox(snag_host$LideSnagBiomass)
+
+snag_host <- snag_host |> select(Plot, SampleYear, LideSnagStemDensity, LideSnagBiomass, LideSnagBiomassNorm, LideSnagStemDensityNorm)
+
+
+```
+
+**Cwd host biomass**        
+- 94 plots with cwd host data    
+- See dataset cleaning page for how this data was obtained (summarizing total mass of individual stems of LIDE, QUAG)      
+
+```{r}
+m <- load_meta() |> select(Plot, SampleYear, CWD_Host_Biomass) |>
+  select(Plot, SampleYear, CWD_Host_Biomass) |>
+  rename(CwdHostBiomass = CWD_Host_Biomass) |>
+  distinct()
+
+m$CwdHostBiomassNorm <- box_cox(m$CwdHostBiomass) 
+
+
+```
+
+**UMCA stem densities**         
+- 183 plots with UMCA stand density data    
+
+
+```{r}
+umca <- q_sums |>
+ filter(Species == "UMCA" & Status == 0) |>
+ rename(UmcaStemDensity = TotalStem)
+
+umca$UmcaStemDensityNorm <- box_cox(umca$UmcaStemDensity) 
+
+umca <- umca |>
+  ungroup() |>
+  select(Plot, SampleYear, UmcaStemDensity, UmcaStemDensityNorm)
+
+
+```
+
+**LIDE living stem densities**         
+- 169 plots with LIDE living stand density data    
+
+```{r}
+lide_d <- q_sums |>
+ filter(Species == "LIDE" & Status == 0) |>
+ rename(LideStemDensity = TotalStem)
+
+lide_d$LideStemDensityNorm <- box_cox(lide_d$LideStemDensity) 
+
+lide_de <- lide_d |>
+  ungroup() |>
+  select(Plot, SampleYear, LideStemDensity, LideStemDensityNorm)
+
+```
+
+
+
+#### Final dataset      
+There are two final datasets -- 
+1) Includes all standing biomass:
+  - n = 274 (with na's for years with standing biomass data but no snag host, UMCA or LiDE living stem density)  
+  - t = 2006 - 2023     
+
+```{r}
+
+all_year <- left_join(q_sums, snag_host, by = c("Plot", "SampleYear"), relationship = "many-to-many")
+
+all_year <- left_join(all_year, umca, by = c("Plot", "SampleYear"), relationship = "many-to-many")
+
+all_year$TotalBiomassNorm = box_cox(all_year$TotalBiomass)
+
+all_year <- left_join(all_year, p, by = c("Plot", "SampleYear", "PRam", "Fire", "ForestType"))
+
+all_year <- left_join(all_year, lide_de, by = c("Plot", "SampleYear"))
+
+all_year$ElevationNorm <- box_cox(all_year$Elevation)
+all_year$SlopeNorm <- box_cox(all_year$Slope)
+all_year$tFireNorm <- box_cox(all_year$tFire)
+
+
+
+
+
+```
+
+
+
+2) Includes coarse woody debris:      
+
+**47 unique plots with redwood living biomass data, tanoak snag data and cwd data.**      
+
+```{r}
+cwd_year <- left_join(m, all_year, by = c("Plot", "SampleYear")) 
+
+cwd_year <- cwd_year |>
+  mutate(DiseaseFuels = LideSnagBiomass + CwdHostBiomass,
+         DiseaseFuelsNorm = LideSnagBiomassNorm + CwdHostBiomassNorm
+) |>
+  distinct()
+
+```
+
+### Quantitative analysis and modeling suite    
+
+Across SESE, LIDE, UMCA, QUAG:      
+
+1) How has total living biomass changed from the first inventory to most recent inventory?        
+
+2) How have disease and fire impacted individual stems and stands (plots)?  
+
+
+```{r}
+#| fig-width: 16
+#| fig-height: 9 
+
+ts_look <- function(species, df_i) {
+   df <- df_i |>
+    filter(Status == 0 & Species == species) |>
+    group_by(Plot, Species) |>
+    filter(SampleYear %in% c(min(SampleYear), max(SampleYear))) |>
+    mutate(period = if_else(SampleYear == min(SampleYear), "min", "max")) |>
+    ungroup() |>
+    select(Plot, Species, period, SampleYear, TotalStem, TotalBiomass) |>
+    pivot_wider(
+        names_from = period,
+        values_from = c(SampleYear, TotalStem, TotalBiomass)
+      ) |>
+    mutate(
+        TotalStem_diff = TotalStem_max - TotalStem_min,
+        TotalBiomass_diff = TotalBiomass_max - TotalBiomass_min) |>
+    drop_na()
+
+  print(paste("Number of unique plots that were measured twice and no na's:", n_distinct(df$Plot)))
+ 
+  neg <- df |>
+    filter(TotalStem_diff < 0)
+  q <- n_distinct(neg$Plot)
+  
+  print(paste("Number of plots with negative stem density changes:", q)) 
+  
+  neg2 <- df |>
+    filter(TotalBiomass_diff < 0)
+  q2 <- n_distinct(neg2$Plot)
+  
+  print(paste("Number of plots with negative biomass changes:", q2))
+  
+  df_s <- data.frame( 
+              "MeanDensityChange" = mean(df$TotalStem_diff),
+              "MeanBiomassChange" = mean(df$TotalBiomass_diff),
+              "0.25DensityChange" = quantile(df$TotalStem_diff, 0.25),
+              "0.25BiomassChange" = quantile(df$TotalBiomass_diff, 0.25),
+              "0.75MaxDensityChange" = quantile(df$TotalStem_diff, 0.75),
+              "0.75MaxBiomassChange" = quantile(df$TotalBiomass_diff, 0.75)
+
+    )
+  
+  print(df_s)
+
+  diff <- df |>
+    select(Plot, TotalBiomass_min, TotalBiomass_max) |>
+    pivot_longer(cols = TotalBiomass_min:TotalBiomass_max, names_to = "Date", values_to = "Biomass") |>
+    mutate(Date = case_when(
+                            Date == "TotalBiomass_min" ~ "Min",
+                            TRUE ~ "Max"))
+
+
+  comp_model_b <- lmer(Biomass ~  Date + (1 | Plot), data = diff) 
+
+  tidy_m <- tidy(comp_model_b)
+
+  p_val <-  tidy_m |>
+    filter(effect == "fixed" & term == "DateMin") |>
+    pull(p.value)
+
+  p1 <- diff |>
+    ggplot(aes(x = Date, y = Biomass, fill = Date)) +
+    geom_boxplot() +
+    geom_jitter() +
+    theme_bw() +
+    labs(title = "Change in Biomass from first to last inventory") +
+    scale_fill_viridis_d(option = "D")
+
+
+  if (p_val < 0.1){
+  p1 <- p1 +  annotate(
+      "text", 
+      x = 1.5,      
+      y = max(diff$Biomass), 
+      label = paste0("** (p = ", round(p_val, 6), ")"),
+      vjust = 2, 
+      hjust = 0, 
+      size = 4,
+      fontface = "bold"
+    )
+   
+
+  } else {
+    p1 <- p1 +  annotate(
+      "text", 
+      x = 1.5,      
+      y = max(diff$Biomass), 
+      label = paste0("* (p = ", round(p_val, 6), ")"),
+      vjust = 2, 
+      hjust = 0, 
+      size = 4,
+      fontface = "bold"
+    )
+   
+  } 
+
+diff_s <- df |>
+    select(Plot, TotalStem_min, TotalStem_max) |>
+    pivot_longer(cols = TotalStem_min:TotalStem_max, names_to = "Date", values_to = "StemDensity") |>
+    mutate(Date = case_when(
+                            Date == "TotalStem_min" ~ "Min",
+                            TRUE ~ "Max"))
+
+
+  comp_model_s <- lmer(StemDensity ~  Date + (1 | Plot), data = diff_s) 
+
+  tidy_s <- tidy(comp_model_s)
+
+  p_val_s <-  tidy_s |>
+    filter(effect == "fixed" & term == "DateMin") |>
+    pull(p.value)
+
+  p2 <- diff_s |>
+    ggplot(aes(x = Date, y = StemDensity, fill = Date)) +
+    geom_boxplot() +
+    geom_jitter() +
+    theme_bw() +
+    labs(title = "Change in Stem Density from first to last inventory") +
+    scale_fill_viridis_d(option = "D")
+
+
+  if (p_val_s < 0.1){
+  p2 <- p2 +  annotate(
+      "text", 
+      x = 1.5,      
+      y = max(diff_s$StemDensity), 
+      label = paste0("** (p = ", round(p_val_s, 6), ")"),
+      vjust = 2, 
+      hjust = 0, 
+      size = 4,
+      fontface = "bold"
+    )
+   
+
+  } else {
+    p2 <- p2 +  annotate(
+      "text", 
+      x = 1.5,      
+      y = max(diff_s$StemDensity), 
+      label = paste0("* (p = ", round(p_val_s, 6), ")"),
+      vjust = 2, 
+      hjust = 0, 
+      size = 4,
+      fontface = "bold"
+    )
+   
+  } 
+
+
+  pe <- p1 + p2
+
+  return(pe)
+}
+
+
+
+```
+
+
+#### Modeling Suite     
+Compare model fits across path analysis (tC ha), mixed effects models (tC ha, stem density), fixed effects models (tC ha, stem density), survival analysis (individual stem) and bayesian panel (tC ha, stem density).          
+
+
+##### Path analysis     
+
+```{r}
+#| fig-width: 16
+#| fig-height: 9 
+
+
+library(semPlot)
+
+
+pa <- function(model, df, species, title, export = FALSE) {
+  intro <- model
+  
+  print(paste("Unique plots n =", n_distinct(df$Plot)))
+  
+  fit_sa <- sem(model = intro, data = df)
+
+  print(summary(fit_sa, rsquare = TRUE, fit.measures = TRUE))
+
+  if (export == TRUE) {
+
+    png("./exports/sese-path.png", width = 1400, height = 1000, res = 150)
+    par(mar = c(1, 1, 6, 1)) 
+
+    semPaths(fit_sa, what = "est", fade = FALSE, edge.label.cex = 0.8,
+         sizeMan = 10,          
+         nCharNodes = 0, nCharEdges = 0,
+         residuals = TRUE,
+         mar = c(6, 6, 8, 6)) 
+
+    title(title, 
+      line = 4, cex.main = 0.9)
+    
+    dev.off()
+
+  } else {
+
+    par(mar = c(1, 1, 6, 1)) 
+
+    semPaths(fit_sa, what = "est", fade = FALSE, edge.label.cex = 0.8,
+         sizeMan = 10,          
+         nCharNodes = 0, nCharEdges = 0,
+         residuals = TRUE,
+         mar = c(6, 6, 8, 6)) 
+
+    title(title, 
+      line = 4, cex.main = 0.9)
+    
+
+
+  }
+
+}
+
+
+# example
+# example
+#pa(model = "TotalBiomassNorm ~ CwdHostBiomassNorm + LideSnagBiomassNorm + Fire + PRam + ElevationNorm + SlopeNorm + tFireNorm
+#          LideSnagBiomassNorm ~ UmcaStemDensityNorm + PRam 
+#          CwdHostBiomassNorm ~ UmcaStemDensityNorm + LideSnagBiomassNorm + PRam + Fire + tFire
+#          ", df = cwd_year, species = "SESE", title = "Path analysis quantifying CWD fuels as a mediator for disease driven fire impacts to Redwood biomass",
+#          export = FALSE)
+#
+#
+
+```
+
+##### Mixed effects modeling  
+
+```{r}
+
+mixed_model <- function(df, formula, all = FALSE) {
+  f <- as.formula(formula)
+
+  m <- lmer(f, data = df)
+
+  p <- check_model(m)
+  
+  print(summary(m))
+
+  df$meTotalBiomassNorm <- predict(m, newdata = df, 
+                                           allow.new.levels = TRUE)
+  print(p)
+
+  if (all == FALSE){
+  c <- df |>
+    ggplot(aes(x = LideSnagBiomassNorm, y = CwdHostBiomassNorm, z = TotalBiomassNorm)) +
+    geom_point() +
+    geom_smooth_3d(aes(z = meTotalBiomassNorm),
+                  color = "black", grid = "equilateral") +
+    coord_3d(light = NULL, dist = 3, yaw = -100, pitch = 10) +
+    scale_fill_viridis_c()
+
+  print(c)
+
+} else {
+c <- df |>
+    ggplot(aes(x = tFire, y = LideSnagBiomassNorm, z = TotalBiomassNorm)) +
+    geom_point() +
+    geom_smooth_3d(aes(z = meTotalBiomassNorm),
+                  color = "black", grid = "equilateral") +
+    coord_3d(light = NULL, dist = 3, yaw = -100, pitch = 10) +
+    scale_fill_viridis_c()
+
+  print(c)
+}
+
+
+  rmse_test <- sqrt(mean((df$TotalBiomassNorm - df$meTotalBiomassNorm)^2, na.rm = TRUE))
+  r2_test   <- cor(df$TotalBiomassNorm , df$meTotalBiomassNorm, use = "complete.obs")^2
+  aic <- AIC(m)
+  
+  results <- data.frame(
+    "RMSE" = round(rmse_test, 3),
+    "R-squared" = round(r2_test, 3),
+    "AIC" = round(aic, 3),
+    check.names = FALSE
+  )
+
+
+    
+  return(results)
+
+}
+
+#m1 <- mixed_model(formula = "TotalBiomassNorm ~ CwdHostBiomassNorm + LideSnagBiomassNorm + Fire + PRam + ElevationNorm + SlopeNorm  + tFireNorm +
+#                    (1 | Plot) + (1 |SampleYear)", df = sese, all = FALSE)
+#
+#
+
+
+```
+
+
+
+### Redwood   
+
+```{r}
+sese <- cwd_year |>
+  filter(Species == "SESE" & Status == 0) |> 
+  distinct() |>
+  group_by(Plot) |>
+  arrange(SampleYear, .by_group = TRUE) |>
+  mutate(
+         StemDiffNorm     = TotalStemNorm - dplyr::lag(TotalStemNorm),
+         BiomassDiffNorm  = TotalBiomassNorm - dplyr::lag(TotalBiomassNorm),
+         YearDiff     = SampleYear - dplyr::lag(SampleYear)   # useful if intervals aren't uniform
+  ) |>
+  ungroup() 
+
+sese_all <- all_year |>
+  filter(Species == "SESE" & Status == 0) |> distinct() |>
+  group_by(Plot) |>
+  arrange(SampleYear, .by_group = TRUE) |>
+  mutate(
+         StemDiffNorm     = TotalStemNorm - dplyr::lag(TotalStemNorm),
+         BiomassDiffNorm  = TotalBiomassNorm - dplyr::lag(TotalBiomassNorm),
+    YearDiff     = SampleYear - lag(SampleYear)   # useful if intervals aren't uniform
+  ) |>
+  ungroup()
+
+
+
+
+print("Across all data (not including fuels)")
+ts_look("SESE", sese_all)
+print("Including fuels")  
+ts_look("SESE", sese)
+
+```
+
+#### Path Analysis   
+Testing the following word equations:
+
+$$
+Redwood living biomass = Tanoak Snag Biomass + Cwd Biomass + Fire + Disease + Elevation + Slope 
+$$
+
+
+$$
+Tanoak Snag Biomass = Bay Laurel Density + Disease  
+$$
+
+
+$$
+Cwd Biomass = Tanoak Snag Biomass + Bay Laurel Density + Fire + Disease
+$$
+
+```{r}
+pa(model = "TotalBiomassNorm ~ CwdHostBiomassNorm + LideSnagBiomassNorm + Fire + PRam + ElevationNorm + SlopeNorm + tFireNorm
+          LideSnagBiomassNorm ~ UmcaStemDensityNorm + PRam 
+          CwdHostBiomassNorm ~ UmcaStemDensityNorm + LideSnagBiomassNorm + PRam + Fire + tFire
+          ", df = sese, species = "SESE", title = "Path analysis quantifying CWD fuels as a mediator for disease driven fire impacts to Redwood biomass",
+          export = FALSE)
+
+
+```
+
+
+##### Sensitivity Analysis     
+
+**Using the larger tree database**    
+
+```{r}
+pa(model = "TotalBiomassNorm ~ LideSnagBiomassNorm + Fire + PRam + ElevationNorm + SlopeNorm + tFireNorm
+          LideSnagBiomassNorm ~ UmcaStemDensityNorm + PRam 
+          ", df = sese_all, species = "SESE", title = "Path analysis quantifying CWD fuels as a mediator for disease driven fire impacts to Redwood biomass",
+          export = FALSE)
+
+```
+
+**Summarizing total fuels**   
+
+```{r}
+pa(model = "TotalBiomassNorm ~ DiseaseFuelsNorm + Fire + PRam + ElevationNorm + SlopeNorm + tFireNorm
+          DiseaseFuelsNorm ~ UmcaStemDensityNorm  + PRam + Fire + tFire
+          ", df = sese, species = "SESE", title = "Path analysis quantifying CWD fuels as a mediator for disease driven fire impacts to Redwood biomass",
+          export = FALSE)
+
+```
+
+
+**Per burn scar**     
+ - Could not get models to converge     
+
+```{r}
+cwd_year |>
+  filter(Species == "SESE" & Status == 0) |>
+  ggplot(aes(x = BurnScar, y = TotalBiomass)) +
+  geom_boxplot() +
+  geom_jitter()
+
+
+cwd_year |>
+  filter(Species == "SESE" & Status == 0) |>
+  group_by(BurnScar) |>
+  summarize(
+            nYear = n_distinct(SampleYear),
+            nPlot = n_distinct(Plot))
+
+
+```
+
+```{r}
+
+##pa(model = "TotalBiomassNorm ~ CwdHostBiomassNorm + LideSnagBiomassNorm + Fire + PRam + ElevationNorm + SlopeNorm + tFireNorm
+#          LideSnagBiomassNorm ~ UmcaStemDensityNorm + PRam 
+#          CwdHostBiomassNorm ~ UmcaStemDensityNorm + LideSnagBiomassNorm + PRam + Fire + tFire
+#          ", df = sober_chalk, species = "SESE", title = "Path analysis quantifying CWD fuels as a mediator for disease driven fire impacts to Redwood biomass",
+#          export = FALSE)
+#
+
+```
+
+**Across biomass changes**      
+
+```{r}
+pa(model = "BiomassDiffNorm ~ CwdHostBiomassNorm + LideSnagBiomassNorm + Fire + PRam + ElevationNorm + SlopeNorm + tFireNorm
+          LideSnagBiomassNorm ~ UmcaStemDensityNorm + PRam + tFire 
+          CwdHostBiomassNorm ~ UmcaStemDensityNorm + LideSnagBiomassNorm + PRam + Fire + tFire
+          ", df = sese, species = "SESE", title = "Path analysis quantifying CWD fuels as a mediator for disease driven fire impacts to Redwood biomass",
+          export = FALSE)
+
+pa(model = "BiomassDiffNorm ~ LideSnagBiomassNorm + Fire + PRam + ElevationNorm + SlopeNorm + tFireNorm
+          LideSnagBiomassNorm ~ UmcaStemDensityNorm + PRam + tFire
+          ", df = sese_all, species = "SESE", title = "Path analysis quantifying CWD fuels as a mediator for disease driven fire impacts to Redwood biomass",
+          export = FALSE)
+
+
+
+```
+
+'
+
+#### Mixed effects modeling  
+
+Using the following word equation:      
+
+$$
+Redwood living biomass = Tanoak Snag Biomass + Cwd Biomass + Fire + Disease + Elevation + Slope + (1 | Plot) + (1 |SampleYear)
+$$
+
+
+```{r}
+#| fig-width: 16
+#| fig-height: 14
+
+m1 <- mixed_model(formula = "TotalBiomassNorm ~ CwdHostBiomassNorm + LideSnagBiomassNorm + Fire + PRam + ElevationNorm + SlopeNorm  + tFireNorm +
+                    (1 | Plot) + (1 |SampleYear)", df = sese, all = FALSE)
+m1 
+```
+
+##### Sensitivity analysis      
+
+**Using the larger tree database**    
+
+```{r}
+#| fig-width: 16
+#| fig-height: 14
+
+m2 <- mixed_model(formula = "TotalBiomassNorm ~ LideSnagBiomassNorm + Fire + PRam + ElevationNorm + SlopeNorm  + tFireNorm +
+                    (1 | Plot) + (1 |SampleYear)", df = sese_all, all = TRUE)
+m2 
+
+
+```
+
+**Summarizing total fuels**     
+
+```{r}
+m5 <- mixed_model(formula = "TotalBiomassNorm ~ DiseaseFuelsNorm + Fire + PRam + ElevationNorm + SlopeNorm  + tFireNorm +
+                    (1 | Plot) + (1 |SampleYear)", df = sese)
+m5 
+
+```
+
+**Change in biomass*      
+
+```{r}
+m3 <- mixed_model(formula = "BiomassDiffNorm ~ CwdHostBiomassNorm + LideSnagBiomassNorm + Fire + PRam + ElevationNorm + SlopeNorm  + tFireNorm +
+                    (1 | Plot) + (1 |SampleYear)", df = sese, all = FALSE)
+m3 
+
+m4 <- mixed_model(formula = "BiomassDiffNorm ~  LideSnagBiomassNorm + Fire + PRam + ElevationNorm + SlopeNorm  + tFireNorm +
+                    (1 | Plot) + (1 |SampleYear)", df = sese_all, all = TRUE)
+m4 
+
+
+```
+
+
+
+
+#### Within estimator designs (fixed effect model)      
+
+```{r}
+#| fig-width: 16
+#| fig-height: 14
+#| eval: false
+
+model_twoway <- feols(SeseBiomassNorm ~ CwdHostBiomassNorm + LideSnagBiomassNorm + Fire + PRam + tFire | Plot + SampleYear,
+                      data = sese_final)
+
+summary(model_twoway) 
+
+sese_final$predictedSeseBiomassF <- predict(model_twoway, newdata = sese_final, 
+                                           allow.new.levels = TRUE)
+
+c <- sese_final |>
+  ggplot(aes(x = LideSnagBiomassNorm, y = CwdHostBiomassNorm, z = SeseBiomassNorm)) +
+  geom_point() +
+  geom_smooth_3d(aes(z = predictedSeseBiomassF),
+                  color = "black", grid = "equilateral") +
+  coord_3d(light = NULL, dist = 3, yaw = -100, pitch = 10) +
+  scale_fill_viridis_c()
+
+c
+
+
+```
+
+
+
+#### Bayesian Panel    
+
+```{r}
+#| eval: false
+
+f <- obs(SeseBiomassNorm ~ CwdHostBiomassNorm + LideSnagBiomassNorm + Fire + PRam + Elevation + Slope + tFire, family = "gaussian") +
+     obs(LideSnagBiomassNorm ~ UmcaStemDensityNorm + PRam, family = "gaussian") +
+     obs(CwdHostBiomassNorm ~ UmcaStemDensityNorm + LideSnagBiomassNorm + PRam + Fire + tFire, family = "gaussian")
+
+
+
+
+fit <- dynamite(dformula = f, data = sese_final, time = "SampleYear", group = "Plot", chains = 4, cores = 4, seed = 0, refresh = 0)
+
+
+summary(fit) 
+
+
+plot(fit, types = "beta") + theme_bw()
+
+
+
+
+
+
+```
+
+
+#### Survival analysis
+
+Using the following word equation:      
+
+$$
+Redwood stem mortality = Tanoak Snag Biomass + Cwd Biomass + DBH + Fire + Disease + Elevation + Slope + t 
+$$
+
+
+```{r}
+#| fig-width: 16
+#| fig-height: 14
+#| eval: false
+
+sese_stem <- t |> filter(Species == "SESE") |>
+  rename(status = Mortality) |>
+  mutate(status = case_when(
+                            status == 0 ~ 1,
+                            TRUE ~ 2),
+  t = SampleYear - 2006) |>
+  select(Plot, Species, SampleYear, DBH, status, t)
+
+
+sese_plot <- sese_final |> 
+  select(Plot, SampleYear, Fire, PRam, CwdHostBiomass, CwdHostBiomassNorm, LideSnagBiomass, LideSnagBiomassNorm, Elevation,  Slope)
+
+
+sese_sa <- left_join(sese_plot, sese_stem, by = c("Plot", "SampleYear"))
+
+library(survival)
+library(survminer)
+
+f <- Surv(t, status) ~ CwdHostBiomassNorm + LideSnagBiomassNorm + Fire + DBH + PRam + Elevation + Slope
+
+exp_sa <- survreg(f, data = sese_sa, dist = "weibull")
+
+
+summary(exp_sa) 
+
+sese_sa$PredictedTimeDeath <- predict(exp_sa, newdata = sese_sa, type = "response")
+
+c <- sese_sa |>
+  ggplot(aes(x = LideSnagBiomassNorm, y = CwdHostBiomassNorm, z = PredictedTimeDeath)) +
+  geom_point() +
+  geom_smooth_3d(aes(z = PredictedTimeDeath),
+                  color = "black", grid = "equilateral") +
+  coord_3d(light = NULL, dist = 4) +
+  scale_fill_viridis_c()
+c
+
+
+
+```
+
+### Disease impacts on coarse woody debris 
+**Is there higher CWD in diseased stands with no recent fire?**     
+- Filter BurnScar == "control", PRam = 1
+
+```{r}
+#| eval: false
+
+disease <- pools |>
+  filter(BurnScar == "control") |>
+  distinct() 
+
+disease |>
+  ggplot(aes(x = PRam, y = CWD_Ha_Biomass, color = PRam)) +
+  geom_boxplot() +
+  geom_jitter() +
+  theme_bw() +
+  scale_color_viridis_d(option = "H") +
+  labs(x = "Disease Status", subtitle = "Mg CWD Biomass per hectare", color = "PRam")
+
+disease_model <- lmer(log(CWD_Ha_Biomass) ~ PRam + (1 | SampleYear) + (1 | Plot), data = disease)
+
+summary(disease_model)
+
+disease$predictedCwd <- predict(disease_model, newdata = disease)
+
+model_results(disease, disease$CWD_Ha_Biomass, disease$predictedCwd, disease_model)
+
+
+```
+
+
+
+
+## Other analysis    
+
+### Random Sampling Data Exploration      
+Below, I seek to understand the sampling bias throughout the inventory. I use monte carlo simulation to test "randomness" by simulating a random poisson distribution and compare z-scores between our dataset and the simulated dataset.    
+
+
+```{r}
+bias <- read_parquet("./data/arrow/monte.parquet")
+z_score <- function(df,x){
+  df1 <- df |>
+    summarize(
+      pop_mean <- mean({{x}}, na.rm=TRUE),
+      pop_sd <- sd({{x}}, na.rm=TRUE)) |>
+        rename(Mean = 1, Sd = 2) 
+  df <- df |>
+    mutate(ZScore = ({{x}} - df1$Mean)/ df1$Sd)
+  return(df)
+}
+#sd = 2.311 mean=3.21 
+# plotted bias histogram to verify Poisson distribution
+bias_mod1 <- z_score(bias, TotalTimesInventoried)
+
+# simulate poisson distribution 280 total, mean of 3.2
+set.seed(331)
+sim <- data.frame(Simulated = rpois(280,3.2)) 
+sim_mod1 <- z_score(sim,Simulated)
+
+# simulated zscore dataset is slightly right skewed, project dataset is heavily right skewed
+# simulated zscore dataset has no values over ~3 while project dataset has values near 4
+# radius is built on times inventoried
+# color will be built on z-score
+# project dataset, if z-score < -0.5 they get green
+# if z-score > 3 they get red
+# use of binning 3
+bias_mod2 <- bias_mod1 |>
+  mutate(Color = case_when(
+                           ZScore < -0.5 ~ "Green",
+                           ZScore > 2.75 ~ "Red",
+                           TRUE ~ "Blue"
+                           ))
+
+map <- bias_mod2
+
+leaflet(map) %>%
+  addTiles() %>%
+  addProviderTiles(providers$Esri.WorldImagery) %>%
+  setView(lng = mean(map$Lon), lat = mean(map$Lat), zoom = 9) %>%
+  addCircleMarkers(
+    lng = ~Lon,
+    lat = ~Lat,
+    radius = ~Radius * 1.2,  # scale up for visibility
+    label = ~Plot,
+    popup = ~paste0(
+      "<b>Plot:</b> ", Plot, "<br>",
+      "<b>Times Inventoried:</b> ", TotalTimesInventoried, "<br>",
+      "<b>Visit Frequency:</b> ", VisitFrequency
+    ),
+    color = ~Color,
+    fillOpacity = 0.7
+  ) |>
+  addControl(
+    html = "<b style='font-size:12px;'>Bias in Sampling Frequency</b>",
+    position = "topright"
+  ) 
+  
+
+```
+
+
+```{r}
+bias_hist <- bias_mod1 |>
+  select(TotalTimesInventoried, ZScore) |>
+  rename(Count = TotalTimesInventoried) |>
+  mutate(Dataset = "Inventory") 
+
+sim_hist <- sim_mod1 |>
+  rename(Count = Simulated) |>
+  mutate(Dataset = "Simulated")
+comp_hist <- bind_rows(bias_hist,sim_hist)
+comp_hist |>
+    ggplot(aes(x=ZScore, fill=Dataset)) +
+    geom_histogram(bins = 25, color = "white", alpha = 0.6,position = "identity") +
+    scale_fill_viridis_d() +
+    theme_classic() +
+    labs(title="Z-Score Distributions", subtitle="Comparing a Forest Inventory and a Simulated Dataset", y="Count")
+
+
+```
+
+
+### Principle Component Analysis     
+
+**Objective**   
+- Better understand variability within each dataset  
+- Add groups beyond Plot ID to test as random factors 
+
+
+**Plot Dataset**   
+
+```{r}
+#| fig-width: 18
+#| fig-height: 8
+
+library(corrr)
+make_titles <- function(x){
+  # expects a character or factor as an input
+  stopifnot(is.character(x) | is.factor(x))
+  
+  # remove the units at the end of the name
+  str_remove(x, pattern = "(g|mm)$") |> 
+  # replace all _ with spaces
+  str_replace_all(pattern = "_", replacement = " ") |> 
+  # remove extra whitespace on left 
+  str_trim(side = "both") |> 
+  # convert the first letter of each word to upper case
+  str_to_title()
+}
+
+cor_matrix <- function(df, title) {
+  df |>
+    select(where(is.numeric)) |>
+    correlate(method = "pearson",
+            use = "pairwise.complete.obs") |>
+    rename(term1 = term) |> 
+    pivot_longer(cols = -term1, 
+               names_to = "term2", 
+               values_to = "correlation") |>
+    mutate(
+      across(.cols = c(term1, term2), 
+           .fns = ~ make_titles(.x)
+           )
+    ) |> 
+    ggplot(mapping = aes(x = term1,
+                       y = term2, 
+                       fill = correlation)) +
+      geom_tile() +
+      labs(x = "", 
+       y = "", 
+       title = paste("Correlation Matrix of:", title), 
+       fill = "Correlation"
+       ) +
+      theme_bw() +
+      scale_fill_viridis_c(option = "B")
+
+}
+
+plot_meta <- load_plot()
+
+cor_matrix(plot_meta, "Plot Qualitative Variables")
+
+```
+
+
+
+```{r}
+#| fig-width: 18
+#| fig-height: 10
+
+# only numeric cols, will auto scale, center and return transformed data
+pca_me <- function(df) {
+  df1 <- df |>
+    ungroup() |>
+    select(where(is.numeric)) |>
+    drop_na() 
+  pca <- prcomp(df1, scale. = TRUE, center = TRUE, retx = TRUE)
+  
+  pca_var <- pca$sdev^2
+  propve <- pca_var / sum(pca_var)
+  print(summary(pca))
+
+  par(mfrow = c(1,2))
+  plot(propve, xlab = "Principal Component",
+     ylab = "Proportion of Variance Explained",
+     ylim = c(0, 1), type = "b", main = "Scree Plot")
+ 
+  biplot(pca, xlabs=rep("", nrow(df1))) 
+  
+}
+
+
+pca_me(plot_meta)
+
+
+```
+
+
+**Tree Dataset**
+
+```{r}
+#| fig-width: 18
+#| fig-height: 10
+
+tree <- load_meta() 
+
+cor_matrix(tree, "Tree Qualitative Variables")
+
+```
+
+```{r}
+#| fig-width: 18
+#| fig-height: 10
+pca_me(tree)
+```
+
+**Living Biomass Dataset**
+
+```{r}
+#| fig-width: 18
+#| fig-height: 10
+
+live <- tree |>
+  filter(Status == "L") 
+
+cor_matrix(live, "Living Biomass Qualitative Variables")
+
+```
+
+```{r}
+#| fig-width: 18
+#| fig-height: 10
+
+pca_me(live)
+
+```
+
+**Standing Dead Biomass**
+
+```{r}
+#| fig-width: 18
+#| fig-height: 10
+
+dead <- tree |>
+  filter(!Status == "L") 
+
+cor_matrix(dead, "Standing Dead Biomass Qualitative Variables")
+
+```
+
+```{r}
+#| fig-width: 18
+#| fig-height: 10
+
+pca_me(dead)
+
+```
+
+
+
+**Coarse woody debris biomass**     
+
+
+```{r}
+#| fig-width: 18
+#| fig-height: 10
+
+cwd <- load_cwd() |>
+  left_join(load_plot(), by = c("SampleYear", "Plot"), relationship = "many-to-many")
+  
+
+
+cor_matrix(cwd, "CWD Biomass Qualitative Variables")
+
+```
+
+```{r}
+#| fig-width: 18
+#| fig-height: 10
+
+pca_me(cwd)
+
+```
+
+### Analysis of State Factor's Influence on Forest Type   
+Aim to answer:    
+
+**Which state factors drive forest type?**    
+**How does logistic regression compare to random forest models?**    
+
+$$
+\begin{multline}
+\text{Forest Type} \sim \text{Soil Great Group} + \text{SOC 0cm} + \text{SOC (< 10cm)} + \text{SOC (< 30cm)} + \\
+\text{Precipitation} + \text{Temperature} + \text{NDVI} + \text{Albedo} +
+\text{Plot Aspect} + \text{Elevation} + \text{Slope} + \text{Easting} + \text{Northing}
+\end{multline}
+$$
+
+
+#### Logistic Regression    
+```{r}
+library(car)
+library(pROC)
+state <- load_plot()
+
+state_model1 <- glm(ForestType ~ grtgroup + b0 + b10 + b30 + Precipitation + Temperature +
+                    NDVI + Albedo + Elevation + Slope + Easting + 
+                    Northing, data = state, family = "binomial") 
+
+log_vis <- summary(state_model1) 
+print(log_vis)
+print(vif(state_model1))
+
+log_pred <- predict(state_model1, type = "response")
+roc_obj <- roc(state_model1$model$ForestType, log_pred, quiet = TRUE)
+auc_val <- as.numeric(auc(roc_obj))
+print(paste("ROC: ", round(auc_val, 3)))
+
+plot(roc_obj, main = "ROC:",
+     col = "#9370DB", lwd = 3, legacy.axes = TRUE) + theme_bw() 
+
+```
+
+#### Random forest classification model    
+
+```{r}
+library(ranger)
+library(vip)
+vars_used <- c("ForestType","grtgroup","b0","b10","b30","Precipitation",
+               "Temperature","NDVI","Albedo","Elevation","Slope","Easting","Northing")
+
+state_cc <- state[complete.cases(state[, vars_used]), ]
+
+set.seed(200)
+train_index <- sample(1:nrow(state_cc), 0.8 * nrow(state_cc))
+train <- state_cc[train_index, ]
+test  <- state_cc[-train_index, ]
+
+rf_model <- ranger(ForestType ~ grtgroup + b0 + b10 + b30 + Precipitation + Temperature +
+                    NDVI + Albedo + Elevation + Slope + Easting + 
+                    Northing, data = train, 
+                   num.trees = 100, 
+                    importance = "permutation"
+)
+
+prediction <- predict(rf_model, data = test)$predictions
+
+rmse_rf <- sqrt(rf_model$prediction.error) 
+
+accuracy <- mean(prediction == test$ForestType)
+print(paste("Accuracy:", accuracy))
+
+
+p1 <- vip::vip(rf_model) + theme_bw() + labs(title = "Importance index for top covariates predicting forest type")
+print(p1)
+
+roc_rf <- roc(test$ForestType, as.numeric(prediction), quiet = TRUE)
+auc_rf <- as.numeric(auc(roc_rf))
+print(paste("ROC: ", round(auc_rf, 3)))
+
+plot(roc_rf, main = "ROC:",
+     col = "#9370DB", lwd = 3, legacy.axes = TRUE)
+
+
+
+```
+
+**How do the logistic and Random forest models compare?**   
+
+- Utilizing auc  
+
+```{r}
+comps <- tibble(
+                   Model = c("Logistic Regression", "Random Forest"),
+                             AUC = c(auc_val, auc_rf)) |>
+gt() |>
+fmt_number(decimals = 2)
+
+comps
+```
+
+
+    
+
+
+
+### Remote Sensing Biomass Mapping     
+Using field-measured biomass data, can you build a geospatial model to predict biomass changes due to wildfire?   
+
+
+$$
+Live Biomass (Mg C/ ha) ~ Slope + Elevation + NDVI + Burn Area Index  + Fire Status + (1 | SampleYear) + (1 | Plot)
+$$      
+
+
+```{r}
+#| eval: false
+
+plot_fire <- load_plot() |> select(Plot, SampleYear, Fire)
+
+ha_bio <- standing_bio |>
+  select(Plot, SampleYear, TotalLiveBiomass, TotalSnagBiomass) |>
+  left_join(plot_fire, by = c("Plot", "SampleYear")) |>
+  distinct()
+
+# n of plots =222
+dump <- read_parquet("./data/arrow/bio-remote.parquet") |>
+  select(Plot, start_date, elevation, slope, precipitation, temperature_2m_max, NDVI, BAI) |>
+  mutate(SampleYear = year(start_date)) |>
+  select(!start_date) 
+  
+
+# n = 197 plots with remote biomass/remote data
+meta_bio <- ha_bio |>
+  ungroup() |>
+  left_join(
+    dump,     by = c("Plot", "SampleYear")
+  ) |>
+  drop_na() |>
+  mutate(Fire = as.factor(Fire))
+
+vars_to_scale <- c('slope', 'elevation', 'precipitation', 'temperature_2m_max', 'NDVI', 'BAI')
+meta_bio[vars_to_scale] <- lapply(meta_bio[vars_to_scale], function(x) as.numeric(scale(x)))
+
+
+
+bio_model <- lmer(TotalLiveBiomass ~  SampleYear + slope + elevation + precipitation + temperature_2m_max + 
+                     NDVI + BAI + Fire + (1 | Plot) + (1 | SampleYear), 
+                   data = meta_bio)
+
+meta_bio$predictedBio <- predict(bio_model, newdata = meta_bio)
+
+
+model_results <- function(df, y, preds, model) {
+  rmse_test <- sqrt(mean((y - preds)^2))
+  r2_test   <- cor(y, preds)^2
+  aic <- AIC(model)
+  
+  results <- data.frame(
+    "RMSE" = round(rmse_test, 3),
+    "R-squared" = round(r2_test, 3),
+    "AIC" = round(aic, 3),
+    check.names = FALSE
+  )
+  
+  resid_vals <- resid(model)
+  
+  p1 <- df |>
+    mutate(resid = y - preds) |>
+    ggplot(aes(x = y, y = resid)) +
+    geom_point() +
+    geom_hline(yintercept = 0, linetype = "dashed", color = "red") +
+    labs(x = "Observed", y = "Residuals", title = "Residuals vs Observed") +
+    theme_bw()
+  
+  p2 <- ggplot(data.frame(resid = resid_vals), aes(sample = resid)) +
+    stat_qq() +
+    stat_qq_line(color = "red") +
+    labs(title = "Normal Q-Q") +
+    theme_bw()
+  
+  z <- p1 / p2
+  print(z)
+  
+  print(check_model(model))
+  
+  return(results)
+}
+
+
+model_results(meta_bio, meta_bio$TotalLiveBiomass,
+              meta_bio$predictedBio, bio_model) 
+```
+
+
+```{r}
+#| eval: false  
+
+add_model <- function(path) {
+  bs_big <- read.csv(path) |>
+    mutate(coords = .geo) |>
+    mutate(coords = str_extract(coords, "(?<=\\[)[^\\]]+(?=\\])")) |>
+    separate_wider_delim(coords, delim = ",", names = c("lon", "lat")) |>
+    mutate(across(c(lat, lon), as.numeric)) |>
+    mutate(SampleYear = year(start_date)) |>
+    select(!start_date) |>
+    select(SampleYear, BAI, NDVI, elevation, precipitation, slope,
+           temperature_2m_max, lon, lat) |>
+    group_by(lon, lat) |>
+    mutate(Plot = cur_group_id()) |>
+    ungroup() 
+
+    return(bs_big)
+}
+
+
+paths <- c("./data/clean/bs-big3-2006.csv", "./data/clean/bs-big3-2007.csv", "./data/clean/bs-big3-2008.csv", "./data/clean/bs-big3-2009.csv",
+           "./data/clean/bs-big3-2010.csv", "./data/clean/bs-big3-2011.csv", "./data/clean/bs-big3-2012.csv", "./data/clean/bs-big3-2013.csv",
+           "./data/clean/bs-big3-2014.csv", "./data/clean/bs-big3-2015.csv", "./data/clean/bs-big3-2016.csv", "./data/clean/bs-big3-2017.csv",
+           "./data/clean/bs-big3-2018.csv", "./data/clean/bs-big3-2019.csv", "./data/clean/bs-big3-2020.csv",  "./data/clean/bs-big3-2021.csv",
+          "./data/clean/bs-big3-2022.csv"
+
+)
+
+meta_big <- future_map(.x = paths, .f = add_model) |> bind_rows() 
+
+
+# clip by dolan fire
+dolan <- st_read("./data/raw/dolan.json")
+
+pts <- st_as_sf(meta_big, coords = c("lon", "lat"), crs = 4326)
+
+dolan <- st_transform(dolan, st_crs(pts))
+
+dolan <- st_make_valid(dolan)
+clipped <- st_filter(pts, dolan)
+
+
+clipped_df <- clipped |> 
+  mutate(lon = st_coordinates(clipped)[,1],
+         lat = st_coordinates(clipped)[,2]) |> 
+  st_drop_geometry() |>
+  filter(SampleYear %in% c(2018, 2020,  2022)) |>
+  mutate(Fire = case_when(
+                          SampleYear < 2020 ~ 0,
+                          TRUE ~ 1)) |>
+  mutate(Fire = as.factor(Fire))
+
+vars_to_scale <- c('slope', 'elevation', 'precipitation', 'temperature_2m_max', 'NDVI', 'BAI')
+clipped_df[vars_to_scale] <- lapply(clipped_df[vars_to_scale], function(x) as.numeric(scale(x)))
+
+clipped_df$predictedBio <- predict(bio_model, newdata = clipped_df, allow.new.levels = TRUE)
+
+
+map_sf <- clipped_df |>
+    select(Plot, SampleYear, lon, lat, predictedBio) 
+
+
+library(rnaturalearth)  
+library(gganimate)
+
+
+ca_boundary <- ne_states(country = "united states of america", returnclass = "sf") |>
+  dplyr::filter(name == "California")
+
+bs_bbox <- st_as_sfc(st_bbox(c(
+  xmin = min(map_sf$lon), xmax = max(map_sf$lon),
+  ymin = min(map_sf$lat), ymax = max(map_sf$lat)
+), crs = st_crs(4326)))
+
+inset_map <- ggplot() +
+  geom_sf(data = ca_boundary, fill = "grey90", color = "black", linewidth = 0.3) +
+  geom_sf(data = bs_bbox, fill = NA, color = "red", linewidth = 0.8) +
+  theme_void() +
+  theme(panel.background = element_rect(fill = "white", color = "black"))
+
+inset_grob <- ggplotGrob(inset_map)
+
+lon_range <- range(map_sf$lon)
+lat_range <- range(map_sf$lat)
+lon_pad <- diff(lon_range) * 0.2  
+lat_pad <- diff(lat_range) * 0.3
+
+p_map <- ggplot(map_sf, aes(x = lon, y = lat)) +
+  geom_point(aes(color = predictedBio), size = 8) +           
+  scale_color_viridis_c(name = "Biomass", option = "D") +
+  coord_sf(clip = "off") +
+  theme_minimal(base_size = 22) +                              
+  theme(plot.margin = margin(t = 20, r = 250, b = 20, l = 20),  
+        plot.title = element_text(size = 26, face = "bold"),
+        plot.subtitle = element_text(size = 20)) +
+  labs(title = "Biomass changes due to the Dolan Fire from 2018 to 2022",
+       subtitle = "Sample Year: {closest_state}", x= "Longitute", y = "Latitude") +
+  annotation_custom(
+    grob = inset_grob,
+    xmin = lon_range[1] - lon_pad * 0.1  ,   
+    xmax = lon_range[1] + lon_pad ,      
+    ymin = lat_range[1],
+    ymax = lat_range[1] + lat_pad * 1.5       
+    ) +
+  transition_states(SampleYear, transition_length = 1, state_length = 2) +
+  ease_aes('linear')
+
+anim <- animate(
+  p_map,
+  n_frames = 30,
+  fps = 20,
+  width = 2400,    
+  height = 1400,
+  res = 150,
+  renderer = gifski_renderer()
+)
+
+anim_save("biomass_animation_fire.gif", animation = anim)
+
+```
+
+
+![](biomass_animation_fire.gif)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
