@@ -167,7 +167,7 @@ q_sums <- q |>
                             Status == "L" ~ 0,
                             TRUE ~ 1)) |>
   summarize(TotalStem = n(),
-            TotalBiomass = (sum(Biomass, na.rm = TRUE) * 20)) |>
+            TotalBiomass = (sum(Biomass, na.rm = TRUE) * 20) * 0.001) |>
   distinct() 
 
 
@@ -302,11 +302,11 @@ Across SESE, LIDE, UMCA, QUAG:
 
 1) How has total living biomass changed from the first inventory to most recent inventory?        
 
-2) How have disease and fire impacted individual stems and stands (plots)?  
+2) How have disease and fire impacted individual stems and stands (plots)?         
 
 
 ```{r}
-#| fig-width: 16
+#| fig-width: 20 
 #| fig-height: 9 
 
 ts_look <- function(species, df_i) {
@@ -567,13 +567,11 @@ mixed_model <- function(df, formula, all = FALSE) {
   print(c)
 
 } else {
-c <- df |>
-    ggplot(aes(x = tFire, y = LideSnagBiomassNorm, z = TotalBiomassNorm)) +
-    geom_point() +
-    geom_smooth_3d(aes(z = meTotalBiomassNorm),
-                  color = "black", grid = "equilateral") +
-    coord_3d(light = NULL, dist = 3, yaw = -100, pitch = 10) +
-    scale_fill_viridis_c()
+  c <- df |>
+    ggplot(aes(x = PRam, y = TotalBiomassNorm, fill = PRam)) +
+    geom_bar_3d(bins = 15, width = 0.9) +
+    coord_3d(light = NULL, dist = 3, yaw = -45, pitch = 10) +
+    scale_fill_viridis_d()
 
   print(c)
 }
@@ -605,8 +603,62 @@ c <- df |>
 ```
 
 
+#### Survival analysis
+
+
+```{r}
+#| fig-width: 16
+#| fig-height: 14
+
+library(survival)
+library(survminer)
+
+stem <- t |> 
+  rename(status = Mortality) |>
+  mutate(status = case_when(
+                            status == 0 ~ 1,
+                            TRUE ~ 2),
+  t = SampleYear - 2005) |>
+  select(Plot, Species, SampleYear, DBH, status, t)
+
+all_a <- all_year |>
+  ungroup() |>
+  select(!c(Species, Status, TotalStem, TotalBiomass, TotalStemNorm, TotalBiomassNorm))
+
+cwd_a <- cwd_year |>
+  ungroup() |>
+  select(!c(Species, Status, TotalStem, TotalBiomass, TotalStemNorm, TotalBiomassNorm))
+
+
+stem_all <- left_join(stem, all_a, by = c("Plot", "SampleYear")) |> distinct()
+
+stem_cwd <- right_join(stem, cwd_a, by = c("Plot", "SampleYear")) |> distinct()
+
+survive <- function(df, species, eq) {
+
+  df1 <- df |> filter(Species == species)
+
+  f <- as.formula(paste("Surv(t, status) ~", eq))
+
+  exp_sa <- survreg(f, data = df1, dist = "weibull")
+
+  print(summary(exp_sa)) 
+
+
+}
+
+# example
+#survive(stem_cwd, "SESE", "CwdHostBiomassNorm + LideSnagBiomassNorm + Fire + DBH + PRam + ElevationNorm + SlopeNorm + tFireNorm")
+
+```
+
+
+
+
 
 ### Redwood   
+
+**Living Biomass**     
 
 ```{r}
 sese <- cwd_year |>
@@ -640,6 +692,21 @@ ts_look("SESE", sese_all)
 print("Including fuels")  
 ts_look("SESE", sese)
 
+
+
+print("Across burn scars")
+
+for (i in c(unique(sese_all$BurnScar))) {
+
+  print(paste("Burn Scar:", i)) 
+  sese_all |>
+    filter(BurnScar == i) |>
+    ts_look(species = "SESE", df_i = _)
+
+
+}
+
+
 ```
 
 #### Path Analysis   
@@ -660,8 +727,9 @@ Cwd Biomass = Tanoak Snag Biomass + Bay Laurel Density + Fire + Disease
 $$
 
 ```{r}
+
 pa(model = "TotalBiomassNorm ~ CwdHostBiomassNorm + LideSnagBiomassNorm + Fire + PRam + ElevationNorm + SlopeNorm + tFireNorm
-          LideSnagBiomassNorm ~ UmcaStemDensityNorm + PRam 
+          LideSnagBiomassNorm ~ UmcaStemDensityNorm + PRam + tFire 
           CwdHostBiomassNorm ~ UmcaStemDensityNorm + LideSnagBiomassNorm + PRam + Fire + tFire
           ", df = sese, species = "SESE", title = "Path analysis quantifying CWD fuels as a mediator for disease driven fire impacts to Redwood biomass",
           export = FALSE)
@@ -676,7 +744,7 @@ pa(model = "TotalBiomassNorm ~ CwdHostBiomassNorm + LideSnagBiomassNorm + Fire +
 
 ```{r}
 pa(model = "TotalBiomassNorm ~ LideSnagBiomassNorm + Fire + PRam + ElevationNorm + SlopeNorm + tFireNorm
-          LideSnagBiomassNorm ~ UmcaStemDensityNorm + PRam 
+          LideSnagBiomassNorm ~ UmcaStemDensityNorm + PRam + tFire 
           ", df = sese_all, species = "SESE", title = "Path analysis quantifying CWD fuels as a mediator for disease driven fire impacts to Redwood biomass",
           export = FALSE)
 
@@ -743,7 +811,33 @@ pa(model = "BiomassDiffNorm ~ LideSnagBiomassNorm + Fire + PRam + ElevationNorm 
 
 ```
 
-'
+
+**Across burn scars**     
+
+
+```{r}
+for (i in c(unique(sese_all$BurnScar))) {
+
+  print(paste("Burn Scar:", i)) 
+  
+  df <-sese_all |>
+    filter(BurnScar == i) 
+
+  tryCatch({
+  pa(model = "TotalBiomassNorm ~ LideSnagBiomassNorm + Fire + PRam + ElevationNorm + SlopeNorm + tFireNorm
+          LideSnagBiomassNorm ~ UmcaStemDensityNorm + PRam + tFire 
+          ", df = df, species = "SESE", title = "Path analysis quantifying CWD fuels as a mediator for disease driven fire impacts to Redwood biomass",
+          export = FALSE)
+          }, error = function(e) {
+            message("fail")
+  })
+
+    
+}
+
+
+
+```
 
 #### Mixed effects modeling  
 
@@ -761,6 +855,12 @@ $$
 m1 <- mixed_model(formula = "TotalBiomassNorm ~ CwdHostBiomassNorm + LideSnagBiomassNorm + Fire + PRam + ElevationNorm + SlopeNorm  + tFireNorm +
                     (1 | Plot) + (1 |SampleYear)", df = sese, all = FALSE)
 m1 
+
+m1a <- mixed_model(formula = "TotalBiomassNorm ~ CwdHostBiomassNorm * LideSnagBiomassNorm * Fire * PRam + ElevationNorm + SlopeNorm  + tFireNorm +
+                    (1 | Plot) + (1 |SampleYear)", df = sese, all = FALSE)
+m1a 
+
+
 ```
 
 ##### Sensitivity analysis      
@@ -801,52 +901,173 @@ m4
 
 ```
 
+**Across burn scars**     
 
-
-
-#### Within estimator designs (fixed effect model)      
 
 ```{r}
-#| fig-width: 16
-#| fig-height: 14
-#| eval: false
+for (i in c(unique(sese_all$BurnScar))) {
 
-model_twoway <- feols(SeseBiomassNorm ~ CwdHostBiomassNorm + LideSnagBiomassNorm + Fire + PRam + tFire | Plot + SampleYear,
-                      data = sese_final)
+  print(paste("Burn Scar:", i)) 
+  
+  df <-sese_all |>
+    filter(BurnScar == i) 
 
-summary(model_twoway) 
+  tryCatch({
+  mixed_model(formula = "TotalBiomassNorm ~ LideSnagBiomassNorm + Fire + PRam + ElevationNorm + SlopeNorm  + tFireNorm +
+                    (1 | Plot) + (1 |SampleYear)", df = df, all = TRUE)
+          }, error =  function(e) {
+  message("failed")
+  })
 
-sese_final$predictedSeseBiomassF <- predict(model_twoway, newdata = sese_final, 
-                                           allow.new.levels = TRUE)
+    
+}
 
-c <- sese_final |>
-  ggplot(aes(x = LideSnagBiomassNorm, y = CwdHostBiomassNorm, z = SeseBiomassNorm)) +
-  geom_point() +
-  geom_smooth_3d(aes(z = predictedSeseBiomassF),
-                  color = "black", grid = "equilateral") +
-  coord_3d(light = NULL, dist = 3, yaw = -100, pitch = 10) +
-  scale_fill_viridis_c()
-
-c
 
 
 ```
 
 
 
-#### Bayesian Panel    
+#### Survival analysis
+
+Using the following word equation:      
+
+$$
+Redwood stem mortality = Tanoak Snag Biomass + Cwd Biomass + DBH + Fire + Disease + Elevation + Slope + tFire 
+$$
+
+
+```{r}
+#| fig-width: 16
+#| fig-height: 14
+#| eval: false
+
+survive(stem_cwd, "SESE", "CwdHostBiomassNorm + LideSnagBiomassNorm + Fire + DBH + PRam + ElevationNorm + SlopeNorm + tFireNorm")
+
+```
+
+##### Sensitivity Analysis      
+
+**Across all years (no cwd fuels)**     
 
 ```{r}
 #| eval: false
 
-f <- obs(SeseBiomassNorm ~ CwdHostBiomassNorm + LideSnagBiomassNorm + Fire + PRam + Elevation + Slope + tFire, family = "gaussian") +
-     obs(LideSnagBiomassNorm ~ UmcaStemDensityNorm + PRam, family = "gaussian") +
-     obs(CwdHostBiomassNorm ~ UmcaStemDensityNorm + LideSnagBiomassNorm + PRam + Fire + tFire, family = "gaussian")
+survive(stem_all, "SESE", "LideSnagBiomassNorm + Fire + DBH + PRam + ElevationNorm + SlopeNorm + tFireNorm")
+
+
+
+```
+
+**Across burn scars**     
+
+
+```{r}
+for (i in c(unique(stem_all$BurnScar))) {
+
+  print(paste("Burn Scar:", i)) 
+  
+  df <-stem_all |>
+    filter(BurnScar == i) 
+
+  tryCatch({
+ survive(df, "SESE", "LideSnagBiomassNorm + Fire + DBH + PRam + ElevationNorm + SlopeNorm + tFireNorm")
+          }, error =  function(e) {
+  message("failed")
+  })
+
+    
+}
+
+
+
+```
 
 
 
 
-fit <- dynamite(dformula = f, data = sese_final, time = "SampleYear", group = "Plot", chains = 4, cores = 4, seed = 0, refresh = 0)
+#### Bayesian Panel    
+
+**Solving for biomass**     
+
+- Gamma distribution   
+
+```{r}
+#| fig-width: 18
+#| fig-height: 14
+
+f <- obs(TotalBiomass ~ CwdHostBiomass + LideSnagBiomass + Fire + PRam + ElevationNorm + SlopeNorm + tFire, family = "gamma") +
+     obs(LideSnagBiomass ~ UmcaStemDensity + PRam + tFire, family = "gamma") +
+     obs(CwdHostBiomass ~ UmcaStemDensity + LideSnagBiomass + PRam + Fire + tFire, family = "gamma")
+
+sese_b <- sese |>
+  filter(TotalBiomass > 0 & LideSnagBiomass > 0)
+
+fit <- dynamite(dformula = f, data = sese_b, time = "SampleYear", group = "Plot", chains = 1, cores = 4, seed = 0)
+
+summary(fit) |>
+  mutate(across(c(mean, sd, q5, q95), ~ round(.x, 3)),
+         crosses_zero = q5 <= 0 & q95 >= 0) |>
+  gt() |>
+  fmt_number(columns = c(mean, sd, q5, q95), decimals = 3) |>
+  data_color(
+    columns = crosses_zero,
+    fn = \(x) if_else(x, "#f8d7da", "#d4edda")   # red-ish if crosses zero, green-ish if not
+  ) 
+
+
+plot(fit, types = "beta") + theme_bw()
+
+
+
+```
+
+- Poisson distribution (stem density)     
+
+```{r}
+#| fig-width: 18
+#| fig-height: 14
+
+
+f <- obs(TotalStem ~ CwdHostBiomass + LideSnagBiomass + Fire + PRam + ElevationNorm + SlopeNorm + tFire , family = "poisson") +
+     obs(LideSnagBiomass ~ UmcaStemDensity + PRam + tFire + lag(LideSnagBiomass), family = "gamma") +
+     obs(CwdHostBiomass ~ UmcaStemDensity + LideSnagBiomass + PRam + Fire + tFire + lag(CwdHostBiomass), family = "gamma")
+
+
+fit <- dynamite(dformula = f, data = sese_b, time = "SampleYear", group = "Plot", chains = 1, cores = 4, seed = 0)
+
+
+summary(fit) |>
+  mutate(across(c(mean, sd, q5, q95), ~ round(.x, 3)),
+         crosses_zero = q5 <= 0 & q95 >= 0) |>
+  gt() |>
+  fmt_number(columns = c(mean, sd, q5, q95), decimals = 3) |>
+  data_color(
+    columns = crosses_zero,
+    fn = \(x) if_else(x, "#f8d7da", "#d4edda")   # red-ish if crosses zero, green-ish if not
+  ) 
+
+
+plot(fit, types = "beta") + theme_bw()
+
+
+
+```
+
+- Bernoulli distribution (stem)     
+
+```{r}
+#| fig-width: 18
+#| fig-height: 14
+#| eval: false
+
+
+f <- obs(status ~ LideSnagBiomass + Fire + PRam + ElevationNorm + SlopeNorm + tFire , family = "bernoulli") +
+     obs(LideSnagBiomass ~ UmcaStemDensity + PRam + tFire + lag(LideSnagBiomass), family = "gamma") +
+     obs(CwdHostBiomass ~ UmcaStemDensity + LideSnagBiomass + PRam + Fire + tFire + lag(CwdHostBiomass), family = "gamma")
+
+
+fit <- dynamite(dformula = f, data = stem_all, time = "SampleYear", chains = 1, cores = 4, seed = 0, refresh = 0)
 
 
 summary(fit) 
@@ -856,7 +1077,173 @@ plot(fit, types = "beta") + theme_bw()
 
 
 
+```
 
+
+
+### Coast live oak       
+
+**Living Biomass**     
+
+```{r}
+quag <- cwd_year |>
+  filter(Species == "QUAG" & Status == 0) |> 
+  distinct() |>
+  group_by(Plot) |>
+  arrange(SampleYear, .by_group = TRUE) |>
+  mutate(
+         StemDiffNorm     = TotalStemNorm - dplyr::lag(TotalStemNorm),
+         BiomassDiffNorm  = TotalBiomassNorm - dplyr::lag(TotalBiomassNorm),
+         YearDiff     = SampleYear - dplyr::lag(SampleYear)   # useful if intervals aren't uniform
+  ) |>
+  ungroup() 
+
+quag_all <- all_year |>
+  filter(Species == "QUAG" & Status == 0) |> distinct() |>
+  group_by(Plot) |>
+  arrange(SampleYear, .by_group = TRUE) |>
+  mutate(
+         StemDiffNorm     = TotalStemNorm - dplyr::lag(TotalStemNorm),
+         BiomassDiffNorm  = TotalBiomassNorm - dplyr::lag(TotalBiomassNorm),
+    YearDiff     = SampleYear - lag(SampleYear)   # useful if intervals aren't uniform
+  ) |>
+  ungroup()
+
+
+
+
+print("Across all data (not including fuels)")
+ts_look("QUAG", quag_all)
+print("Including fuels")  
+ts_look("QUAG", quag)
+
+```
+
+#### Path Analysis   
+Testing the following word equations:
+
+$$
+Coast live oak living biomass = Tanoak Snag Biomass + Cwd Biomass + Bay laurel stem density + Fire + Disease + Elevation + Slope 
+$$
+
+
+$$
+Tanoak Snag Biomass = Bay Laurel Density + Disease  
+$$
+
+
+$$
+Cwd Biomass = Tanoak Snag Biomass + Bay Laurel Density + Fire + Disease
+$$
+
+```{r}
+pa(model = "TotalBiomassNorm ~ CwdHostBiomassNorm + LideSnagBiomassNorm + UmcaStemDensityNorm + Fire + PRam + ElevationNorm + SlopeNorm + tFireNorm
+          LideSnagBiomassNorm ~ UmcaStemDensityNorm + PRam + tFire 
+          CwdHostBiomassNorm ~ UmcaStemDensityNorm + LideSnagBiomassNorm + PRam + Fire + tFire
+          ", df = quag, species = "QUAG", title = "Path analysis quantifying CWD fuels as a mediator for disease driven fire impacts to Coast live oak biomass",
+          export = FALSE)
+
+
+```
+
+
+##### Sensitivity Analysis     
+
+**Using the larger tree database**    
+
+```{r}
+pa(model = "TotalBiomassNorm ~ LideSnagBiomassNorm + Fire + PRam + ElevationNorm + SlopeNorm + tFireNorm
+          LideSnagBiomassNorm ~ UmcaStemDensityNorm + PRam + tFire 
+          ", df = quag_all, species = "QUAG", title = "Path analysis quantifying CWD fuels as a mediator for disease driven fire impacts to Coast live oak biomass",
+          export = FALSE)
+
+```
+
+**Summarizing total fuels**   
+
+```{r}
+pa(model = "TotalBiomassNorm ~ DiseaseFuelsNorm + Fire + PRam + ElevationNorm + SlopeNorm + tFireNorm
+          DiseaseFuelsNorm ~ UmcaStemDensityNorm  + PRam + Fire + tFire
+          ", df = quag, species = "QUAG", title = "Path analysis quantifying CWD fuels as a mediator for disease driven fire impacts to Coast live oak biomass",
+          export = FALSE)
+
+```
+
+
+
+
+**Across biomass changes**      
+
+```{r}
+pa(model = "BiomassDiffNorm ~ CwdHostBiomassNorm + LideSnagBiomassNorm + Fire + PRam + ElevationNorm + SlopeNorm + tFireNorm
+          LideSnagBiomassNorm ~ UmcaStemDensityNorm + PRam + tFire 
+          CwdHostBiomassNorm ~ UmcaStemDensityNorm + LideSnagBiomassNorm + PRam + Fire + tFire
+          ", df = quag, species = "QUAG", title = "Path analysis quantifying CWD fuels as a mediator for disease driven fire impacts to Coast live oak biomass",
+          export = FALSE)
+
+pa(model = "BiomassDiffNorm ~ LideSnagBiomassNorm + Fire + PRam + ElevationNorm + SlopeNorm + tFireNorm
+          LideSnagBiomassNorm ~ UmcaStemDensityNorm + PRam + tFire
+          ", df = quag_all, species = "QUAG", title = "Path analysis quantifying CWD fuels as a mediator for disease driven fire impacts to Coast live oak biomass",
+          export = FALSE)
+
+
+
+```
+
+'
+
+#### Mixed effects modeling  
+
+Using the following word equation:      
+
+$$
+Redwood living biomass = Tanoak Snag Biomass + Cwd Biomass + Fire + Disease + Elevation + Slope + (1 | Plot) + (1 |SampleYear)
+$$
+
+
+```{r}
+#| fig-width: 16
+#| fig-height: 14
+
+m1 <- mixed_model(formula = "TotalBiomassNorm ~ CwdHostBiomassNorm + LideSnagBiomassNorm + UmcaStemDensityNorm + Fire + PRam + ElevationNorm + SlopeNorm  + tFireNorm +
+                    (1 | Plot) + (1 |SampleYear)", df = quag, all = FALSE)
+m1 
+```
+
+##### Sensitivity analysis      
+
+**Using the larger tree database**    
+
+```{r}
+#| fig-width: 16
+#| fig-height: 14
+
+m2 <- mixed_model(formula = "TotalBiomassNorm ~ LideSnagBiomassNorm + UmcaStemDensityNorm + Fire + PRam + ElevationNorm + SlopeNorm  + tFireNorm +
+                    (1 | Plot) + (1 |SampleYear)", df = quag_all, all = TRUE)
+m2 
+
+
+```
+
+**Summarizing total fuels**     
+
+```{r}
+m5 <- mixed_model(formula = "TotalBiomassNorm ~ DiseaseFuelsNorm + UmcaStemDensityNorm + Fire + PRam + ElevationNorm + SlopeNorm  + tFireNorm +
+                    (1 | Plot) + (1 |SampleYear)", df = quag)
+m5 
+
+```
+
+**Change in biomass*      
+
+```{r}
+m3 <- mixed_model(formula = "BiomassDiffNorm ~ CwdHostBiomassNorm + LideSnagBiomassNorm  + Fire + PRam + ElevationNorm + SlopeNorm  + tFireNorm +
+                    (1 | Plot) + (1 |SampleYear)", df = quag, all = FALSE)
+m3 
+
+m4 <- mixed_model(formula = "BiomassDiffNorm ~  LideSnagBiomassNorm + Fire + PRam + ElevationNorm + SlopeNorm  + tFireNorm +
+                    (1 | Plot) + (1 |SampleYear)", df = quag_all, all = TRUE)
+m4 
 
 
 ```
@@ -867,7 +1254,7 @@ plot(fit, types = "beta") + theme_bw()
 Using the following word equation:      
 
 $$
-Redwood stem mortality = Tanoak Snag Biomass + Cwd Biomass + DBH + Fire + Disease + Elevation + Slope + t 
+Coast live oak stem mortality = Tanoak Snag Biomass + Cwd Biomass + UmcaStemDensity + DBH + Fire + Disease + Elevation + Slope + tFire 
 $$
 
 
@@ -876,45 +1263,158 @@ $$
 #| fig-height: 14
 #| eval: false
 
-sese_stem <- t |> filter(Species == "SESE") |>
-  rename(status = Mortality) |>
-  mutate(status = case_when(
-                            status == 0 ~ 1,
-                            TRUE ~ 2),
-  t = SampleYear - 2006) |>
-  select(Plot, Species, SampleYear, DBH, status, t)
+survive(stem_cwd, "QUAG", "CwdHostBiomassNorm + LideSnagBiomassNorm + UmcaStemDensity + Fire + DBH + PRam + ElevationNorm + SlopeNorm + tFireNorm")
+
+```
+
+### Tanoak           
+
+**Living Biomass**     
+
+```{r}
+lide <- cwd_year |>
+  filter(Species == "LIDE" & Status == 0) |> 
+  distinct() |>
+  group_by(Plot) |>
+  arrange(SampleYear, .by_group = TRUE) |>
+  mutate(
+         StemDiffNorm     = TotalStemNorm - dplyr::lag(TotalStemNorm),
+         BiomassDiffNorm  = TotalBiomassNorm - dplyr::lag(TotalBiomassNorm),
+         YearDiff     = SampleYear - dplyr::lag(SampleYear)   # useful if intervals aren't uniform
+  ) |>
+  ungroup() 
+
+lide_all <- all_year |>
+  filter(Species == "LIDE" & Status == 0) |> distinct() |>
+  group_by(Plot) |>
+  arrange(SampleYear, .by_group = TRUE) |>
+  mutate(
+         StemDiffNorm     = TotalStemNorm - dplyr::lag(TotalStemNorm),
+         BiomassDiffNorm  = TotalBiomassNorm - dplyr::lag(TotalBiomassNorm),
+    YearDiff     = SampleYear - lag(SampleYear)   # useful if intervals aren't uniform
+  ) |>
+  ungroup()
 
 
-sese_plot <- sese_final |> 
-  select(Plot, SampleYear, Fire, PRam, CwdHostBiomass, CwdHostBiomassNorm, LideSnagBiomass, LideSnagBiomassNorm, Elevation,  Slope)
 
 
-sese_sa <- left_join(sese_plot, sese_stem, by = c("Plot", "SampleYear"))
+print("Across all data (not including fuels)")
+ts_look("LIDE", lide_all)
+print("Including fuels")  
+ts_look("LIDE", lide)
 
-library(survival)
-library(survminer)
+```
 
-f <- Surv(t, status) ~ CwdHostBiomassNorm + LideSnagBiomassNorm + Fire + DBH + PRam + Elevation + Slope
+#### Path Analysis   
+Testing the following word equations:
 
-exp_sa <- survreg(f, data = sese_sa, dist = "weibull")
+$$
+Tanoak living biomass = Cwd Biomass + Bay laurel stem density + Fire + Disease + Elevation + Slope 
+$$
 
 
-summary(exp_sa) 
+$$
+Cwd Biomass = Tanoak Snag Biomass + Bay Laurel Density + Fire + Disease
+$$
 
-sese_sa$PredictedTimeDeath <- predict(exp_sa, newdata = sese_sa, type = "response")
-
-c <- sese_sa |>
-  ggplot(aes(x = LideSnagBiomassNorm, y = CwdHostBiomassNorm, z = PredictedTimeDeath)) +
-  geom_point() +
-  geom_smooth_3d(aes(z = PredictedTimeDeath),
-                  color = "black", grid = "equilateral") +
-  coord_3d(light = NULL, dist = 4) +
-  scale_fill_viridis_c()
-c
-
+```{r}
+pa(model = "TotalBiomassNorm ~ CwdHostBiomassNorm + UmcaStemDensityNorm + Fire + PRam + ElevationNorm + SlopeNorm + tFireNorm
+          CwdHostBiomassNorm ~ UmcaStemDensityNorm + PRam + Fire + tFireNorm
+          ", df = lide, species = "LIDE", title = "Path analysis quantifying CWD fuels as a mediator for disease driven fire impacts to Tanoak biomass",
+          export = FALSE)
 
 
 ```
+
+
+##### Sensitivity Analysis     
+
+**Using the larger tree database**    
+
+```{r}
+pa(model = "TotalBiomassNorm ~ Fire + PRam + ElevationNorm + SlopeNorm + tFireNorm
+          ", df = lide_all, species = "LIDE", title = "Path analysis quantifying CWD fuels as a mediator for disease driven fire impacts to Tanoak biomass",
+          export = FALSE)
+
+```
+
+
+**Across biomass changes**      
+
+```{r}
+pa(model = "BiomassDiffNorm ~ CwdHostBiomassNorm + UmcaStemDensityNorm + Fire + PRam + ElevationNorm + SlopeNorm + tFireNorm
+          CwdHostBiomassNorm ~ UmcaStemDensityNorm  + PRam + Fire + tFire
+          ", df = lide, species = "LIDE", title = "Path analysis quantifying CWD fuels as a mediator for disease driven fire impacts to tanoak biomass",
+          export = FALSE)
+
+
+```
+
+'
+
+#### Mixed effects modeling  
+
+Using the following word equation:      
+
+$$
+Tanoak living biomass = Cwd Biomass + Fire + Disease + Elevation + Slope + (1 | Plot) + (1 |SampleYear)
+$$
+
+
+```{r}
+#| fig-width: 16
+#| fig-height: 14
+
+m1 <- mixed_model(formula = "TotalBiomassNorm ~ CwdHostBiomassNorm + UmcaStemDensityNorm + Fire + PRam + ElevationNorm + SlopeNorm  + tFireNorm +
+                    (1 | Plot) + (1 |SampleYear)", df = lide, all = FALSE)
+m1 
+```
+
+##### Sensitivity analysis      
+
+**Using the larger tree database**    
+
+```{r}
+#| fig-width: 16
+#| fig-height: 14
+
+m2 <- mixed_model(formula = "TotalBiomassNorm ~  UmcaStemDensityNorm + Fire + PRam + ElevationNorm + SlopeNorm  + tFireNorm +
+                    (1 | Plot) + (1 |SampleYear)", df = lide_all, all = TRUE)
+m2 
+
+
+```
+
+
+**Change in biomass*      
+
+```{r}
+m3 <- mixed_model(formula = "BiomassDiffNorm ~ CwdHostBiomassNorm  + Fire + PRam + ElevationNorm + SlopeNorm  + tFireNorm +
+                    (1 | Plot) + (1 |SampleYear)", df = lide, all = FALSE)
+m3 
+
+
+```
+
+
+#### Survival analysis
+
+Using the following word equation:      
+
+$$
+Tanoak stem mortality = Cwd Biomass + UmcaStemDensity + DBH + Fire + Disease + Elevation + Slope + tFire 
+$$
+
+
+```{r}
+#| fig-width: 16
+#| fig-height: 14
+#| eval: false
+
+survive(stem_cwd, "LIDE", "CwdHostBiomassNorm + UmcaStemDensity + Fire + DBH + PRam + ElevationNorm + SlopeNorm + tFireNorm")
+
+```
+
 
 ### Disease impacts on coarse woody debris 
 **Is there higher CWD in diseased stands with no recent fire?**     
