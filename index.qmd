@@ -74,6 +74,8 @@ library(dynamite)
 library(broom)
 library(broom.mixed)
 library(ggdag)
+library(BayesFactor)
+library(brms)
 
 ```
 
@@ -90,10 +92,7 @@ Assuming continuous variables must be normalized for path analysis, mixed effect
 #| fig-height: 9 
 
 box_cox <- function(dfCol){
-  pt <- orderNorm(dfCol)
-  
-  n <- pt$x.t
-  return(n)
+  log1p(dfCol)
 }
 
 
@@ -313,14 +312,29 @@ cwd_year <- cwd_year |>
          DiseaseFuelsNorm = LideSnagBiomassNorm + CwdHostBiomassNorm
 ) |>
   distinct() |>
-  filter(ForestType == 2) |>
+  filter(ForestType == 2 & Species == "SESE" & Status == 0) |>
   mutate(Group = case_when(
                            PRam == 1 & Fire == 0 ~ "SOD",
                            PRam == 0 & Fire == 1 ~ "Fire",
                             PRam == 1 & Fire == 1 ~ "SOD + Fire",
                            TRUE ~ "Control"
 
-))
+)) |>
+  group_by(Plot) |>
+  arrange(SampleYear, .by_group = TRUE) |>
+  mutate(
+         TotalBiomass_lag = dplyr::lag(TotalBiomass),
+         TotalStem_lag    = dplyr::lag(TotalStem),
+         Year_lag         = dplyr::lag(SampleYear),
+    # change since the previous sample
+    TotalBiomass_chg = TotalBiomass - TotalBiomass_lag,
+    TotalStem_chg    = TotalStem - TotalStem_lag,
+    years_between    = SampleYear - Year_lag
+  ) |>
+  ungroup()
+
+
+
 
 n <- cwd_year |>
   filter(is.na(cwd_year$Group))
@@ -349,7 +363,7 @@ stem_all <- left_join(stem, all_a, by = c("Plot", "SampleYear")) |> distinct()
 
 stem_cwd <- right_join(stem, cwd_a, by = c("Plot", "SampleYear")) |> distinct() |>
   distinct() |>
-  filter(ForestType == 2) |>
+  filter(ForestType == 2 & Species == "SESE") |>
   mutate(Group = case_when(
                            PRam == 1 & Fire == 0 ~ "SOD",
                            PRam == 0 & Fire == 1 ~ "Fire",
@@ -357,6 +371,7 @@ stem_cwd <- right_join(stem, cwd_a, by = c("Plot", "SampleYear")) |> distinct() 
                            TRUE ~ "Control"
 
 ))
+
 
 
 old_stem <- stem_cwd |> filter(DBH >= 20)
@@ -519,6 +534,168 @@ change <-
 change2 <- 
 
 (r + r2) / (stem_d + stem_d2) / (ba + ba2) / (cwd + cwd2) / (sn + sn2)  
+
+
+p <-cwd + cwd2 
+
+set.seed(300)
+
+cwd_year$Group <- as.factor(cwd_year$Group)
+
+bio_a <- anovaBF(TotalBiomass ~ Group, data = cwd_year)
+
+bio_a
+
+bay_results(bio_a)
+
+cwd_df <- cwd_year |>
+  mutate(Plot = factor(Plot), Group = factor(Group)) |>
+  as.data.frame()
+
+bio_a2 <- anovaBF(TotalBiomass ~ Group + Plot,
+                  data = cwd_df, whichRandom = "Plot")
+bio_a2
+
+bay_results(bio_a2)
+
+cwd_plot_mean <- cwd_year |>
+  group_by(Plot, Group) |>
+  summarise(TotalBiomass = mean(TotalBiomass), .groups = "drop") |>
+  mutate(Group = factor(Group)) |>
+  as.data.frame()
+
+bio_a3 <- anovaBF(TotalBiomass ~ Group, data = cwd_plot_mean)
+bio_a3
+
+bay_results(bio_a3)
+
+bay_results <- function(model){
+  post_samples <- posterior(model, iterations = 10000)
+
+  # Posterior median for each group (mu + group deviation)
+  eff_cols <- grep("^Group-", colnames(post_samples), value = TRUE)
+  group_means <- sweep(as.matrix(post_samples[, eff_cols]), 1, post_samples[, "mu"], "+")
+
+  colnames(group_means) <- sub("^Group-", "", eff_cols)
+
+  # 3. Summaries: median and 95% credible interval
+  p1 <- round(t(apply(group_means, 2, function(m) {
+    c(median = median(m),
+      q025   = unname(quantile(m, 0.025)), 
+      q975   = unname(quantile(m, 0.975)))
+  })), 2)
+
+  print(p1)
+
+  pairs <- combn(colnames(group_means), 2)
+
+  diff_summary <- t(apply(pairs, 2, function(p) {
+    d <- group_means[, p[1]] - group_means[, p[2]]
+    c(median   = median(d),
+      q025     = unname(quantile(d, 0.025)),
+      q975     = unname(quantile(d, 0.975)),
+      prob_gt0 = mean(d > 0))
+    }))
+
+  rownames(diff_summary) <- paste(pairs[1, ], "-", pairs[2, ])
+  
+  print(round(diff_summary, 3))
+
+}
+
+bay_results(bio_a)
+
+cwd_change <- cwd_year |>
+  filter(!is.na(TotalBiomass_lag))
+
+chg_bio <- anovaBF(TotalBiomass_chg ~ Group, data = cwd_change)
+
+chg_bio
+
+bay_results(chg_bio)
+
+
+cwd_plot_mean2 <- cwd_year |>
+  group_by(Plot, PRam, Fire) |>
+  summarise(TotalBiomass = mean(TotalBiomass), .groups = "drop") |>
+  mutate(PRam = factor(PRam), Fire = factor(Fire)) |>
+  as.data.frame()
+
+bio_fact <- anovaBF(TotalBiomass ~ PRam * Fire, data = cwd_plot_mean2)
+bio_fact
+
+bay_results(bio_fact[4])
+
+
+
+fact_results <- function(model, iterations = 10000) {
+  post <- as.matrix(posterior(model, iterations = iterations))
+  cols <- colnames(post)
+  get  <- function(nm) if (nm %in% cols) post[, nm] else 0  # 0 if term absent
+
+  combos <- expand.grid(PRam = c("0", "1"), Fire = c("0", "1"),
+                        stringsAsFactors = FALSE)
+
+  cell_means <- sapply(seq_len(nrow(combos)), function(i) {
+    p <- combos$PRam[i]; f <- combos$Fire[i]
+    post[, "mu"] +
+      get(paste0("PRam-", p)) +
+      get(paste0("Fire-", f)) +
+      get(paste0("PRam:Fire-", p, ".&.", f))
+  })
+  colnames(cell_means) <- paste0("PRam", combos$PRam, "_Fire", combos$Fire)
+
+  summ <- function(x) c(median = median(x),
+                        q025 = unname(quantile(x, 0.025)),
+                        q975 = unname(quantile(x, 0.975)))
+
+  means <- round(t(apply(cell_means, 2, summ)), 2)
+
+  pairs <- combn(colnames(cell_means), 2)
+  diffs <- t(apply(pairs, 2, function(p) {
+    d <- cell_means[, p[1]] - cell_means[, p[2]]
+    c(summ(d), prob_gt0 = mean(d > 0))
+  }))
+  rownames(diffs) <- paste(pairs[1, ], "-", pairs[2, ])
+
+  list(means = means, diffs = round(diffs, 3))
+}
+
+fact_results(bio_fact[4])   # interaction model
+fact_results(bio_fact[3])   # additive model
+
+
+
+bio_fact[4] / bio_fact[3]   # interaction vs additive
+bio_fact[3] / bio_fact[2]
+
+
+f <- obs(TotalBiomass ~ CwdHostBiomass + LideSnagBiomass + Fire + PRam + Elevation + Slope + tFire, family = "gamma") +
+     obs(LideSnagBiomass ~ UmcaStemDensity + PRam + tFire, family = "gamma") +
+     obs(CwdHostBiomass ~ UmcaStemDensity + LideSnagBiomass + PRam + Fire + tFire, family = "gamma")
+
+sese_b <- cwd_year |>
+  filter(TotalBiomass > 0 & LideSnagBiomass > 0)
+
+fit <- dynamite(dformula = f, data = sese_b, time = "SampleYear", group = "Plot", chains = 1, cores = 4, seed = 0)
+
+print(summary(fit))
+
+summary(fit) |>
+  mutate(across(c(mean, sd, q5, q95), ~ round(.x, 3)),
+         crosses_zero = q5 <= 0 & q95 >= 0) |>
+  gt() |>
+  fmt_number(columns = c(mean, sd, q5, q95), decimals = 3) |>
+  data_color(
+    columns = crosses_zero,
+    fn = \(x) if_else(x, "#f8d7da", "#d4edda")   # red-ish if crosses zero, green-ish if not
+  ) 
+
+
+plot(fit, types = "beta") + theme_bw()
+
+
+
 
 ```
 
@@ -911,48 +1088,9 @@ survive <- function(df, species, eq) {
 ```{r}
 sese <- cwd_year |>
   filter(Species == "SESE" & Status == 0) |> 
-  distinct() |>
-  group_by(Plot) |>
-  arrange(SampleYear, .by_group = TRUE) |>
-  mutate(
-         StemDiffNorm     = TotalStemNorm - dplyr::lag(TotalStemNorm),
-         BiomassDiffNorm  = TotalBiomassNorm - dplyr::lag(TotalBiomassNorm),
-         YearDiff     = SampleYear - dplyr::lag(SampleYear)   # useful if intervals aren't uniform
-  ) |>
-  ungroup() 
-
-sese_all <- all_year |>
-  filter(Species == "SESE" & Status == 0) |> distinct() |>
-  group_by(Plot) |>
-  arrange(SampleYear, .by_group = TRUE) |>
-  mutate(
-         StemDiffNorm     = TotalStemNorm - dplyr::lag(TotalStemNorm),
-         BiomassDiffNorm  = TotalBiomassNorm - dplyr::lag(TotalBiomassNorm),
-    YearDiff     = SampleYear - lag(SampleYear)   # useful if intervals aren't uniform
-  ) |>
-  ungroup()
+  distinct() 
 
 
-
-
-print("Across all data (not including fuels)")
-ts_look("SESE", sese_all)
-print("Including fuels")  
-ts_look("SESE", sese)
-
-
-
-print("Across burn scars")
-
-for (i in c(unique(sese_all$BurnScar))) {
-
-  print(paste("Burn Scar:", i)) 
-  sese_all |>
-    filter(BurnScar == i) |>
-    ts_look(species = "SESE", df_i = _)
-
-
-}
 
 
 ```
@@ -1102,13 +1240,136 @@ $$
 #| fig-width: 16
 #| fig-height: 14
 
-m1 <- mixed_model(formula = "TotalBiomassNorm ~ CwdHostBiomassNorm + LideSnagBiomassNorm + Fire + PRam + ElevationNorm + SlopeNorm  + tFireNorm +
-                    (1 | Plot) + (1 |SampleYear)", df = sese, all = FALSE)
-m1 
+f <- "TotalBiomassNorm ~ CwdHostBiomassNorm + LideSnagBiomassNorm + ElevationNorm + SlopeNorm  + tFireNorm +
+                    (1 | Plot) + (1 |SampleYear)"
 
-m1a <- mixed_model(formula = "TotalBiomassNorm ~ CwdHostBiomassNorm * LideSnagBiomassNorm * Fire * PRam + ElevationNorm + SlopeNorm  + tFireNorm +
-                    (1 | Plot) + (1 |SampleYear)", df = sese, all = FALSE)
+m <- lmer(as.formula(f), data = cwd_year)
+
+p <- plot(check_model(m))
+  
+print(summary(m))
+
+ci  <- confint(m, parm = "beta_", method = "Wald")
+est <- fixef(m)
+
+out <- data.frame(
+  pct_change = 100 * (exp(est) - 1),
+  lower      = 100 * (exp(ci[, 1]) - 1),
+  upper      = 100 * (exp(ci[, 2]) - 1),
+  p          = summary(m)$coefficients[, "Pr(>|t|)"]
+)
+round(out[-1, ], 3)
+
+
+AIC(m)
+
+
+m1a <- lmer("TotalBiomassNorm ~ CwdHostBiomassNorm * LideSnagBiomassNorm * tFireNorm  + ElevationNorm + SlopeNorm + SampleYear +
+                    (1 | Plot) + (1 |SampleYear)", data = cwd_year)
 m1a 
+
+p <- plot(check_model(m1a))
+
+AIC(m1a)
+
+cwd_year$TotalBiomassNormPred <- predict(m1a, newdata = cwd_year, 
+
+
+                                         allow.new.levels = TRUE)
+
+
+ca <- cwd_year |>
+    ggplot(aes(x = LideSnagBiomassNorm, y = CwdHostBiomassNorm, z = TotalBiomassNorm)) +
+    geom_point() +
+    geom_smooth_3d(aes(z = TotalBiomassNormPred),
+                  color = "black", grid = "equilateral") +
+    coord_3d(light = NULL, dist = 13, yaw = 45, pitch = 10) +
+    scale_fill_viridis_c() +
+    labs(x = "Log1p(Tanoak Snag Biomass) (Mg C -1/ ha)", y = "Log1p(Tanoak CWD Biomass) (Mg -1 / ha)", z = "Log1p(Redwood Biomass) (Mg C -1/ ha)", fill = "")
+
+
+
+
+c <- cwd_year |>
+    ggplot(aes(x = LideSnagBiomassNorm, y = tFireNorm, z = TotalBiomassNorm)) +
+    geom_point() +
+    geom_smooth_3d(aes(z = TotalBiomassNormPred),
+                  color = "black", grid = "equilateral") +
+    coord_3d(light = NULL, dist = 13, yaw = -45, pitch = 10) +
+    scale_fill_viridis_c() +
+    labs(x = "Log1p(Tanoak Snag Biomass) (Mg C -1/ ha)", y = "Log1p(Time Since Fire)", z = "Log1p(Redwood Biomass) (Mg C -1/ ha)", fill = "")
+
+c2 <- cwd_year |>
+    ggplot(aes(x = CwdHostBiomassNorm, y = tFireNorm, z = TotalBiomassNorm)) +
+    geom_point() +
+    geom_smooth_3d(aes(z = TotalBiomassNormPred),
+                  color = "black", grid = "equilateral") +
+    coord_3d(light = NULL, dist = 13, yaw = 45, pitch = 40) +
+    scale_fill_viridis_c() +
+    labs(x = "Log1p(Tanoak CWD Biomass) (Mg C -1/ ha)", y = "Log1p(Time Since Fire)", z = "Log1p(Redwood Biomass) (Mg C -1/ ha)", fill = "")
+
+p <- (c + c2) 
+
+
+
+
+base <- cwd_year |>
+  ggplot(aes(x = CwdHostBiomassNorm, y = LideSnagBiomass, z = TotalBiomassNorm)) +
+  geom_point(size = 0.6) +
+  geom_smooth_3d(aes(z = TotalBiomassNormPred),
+                 color = "black", grid = "equilateral") +
+  scale_fill_viridis_c(guide = "none")
+
+# Coarse sweep: 8 yaws x 3 pitches
+angles <- expand_grid(yaw = seq(-180, 135, by = 45),
+                      pitch = c(10, 25, 40))
+
+plots <- pmap(angles, \(yaw, pitch) {
+  base +
+    coord_3d(light = NULL, dist = 13, yaw = yaw, pitch = pitch) +
+    labs(title = paste0("yaw ", yaw, " / pitch ", pitch)) +
+    theme(axis.title = element_blank(),
+          axis.text  = element_blank(),
+          plot.title = element_text(size = 9))
+})
+
+wrap_plots(plots, ncol = 8)
+
+
+
+f <- "TotalStem ~ CwdHostBiomassNorm + LideSnagBiomassNorm + ElevationNorm + SlopeNorm  + tFireNorm +
+                    (1 | Plot) + (1 |SampleYear)"
+
+m <- glmer(as.formula(f), data = sese, family = poisson)
+
+summary(m)
+
+AIC(m)
+
+m1a <- glmer("TotalStem ~ CwdHostBiomassNorm * LideSnagBiomassNorm * tFireNorm * CwdHostBiomassNorm  + ElevationNorm + SlopeNorm   +
+                    (1 | Plot) + (1 |SampleYear)", data = sese, family = poisson)
+m1a 
+
+summary(m1a)
+
+m_nb <- glmmTMB(StemDensity ~ CwdHostBiomassNorm * LideSnagBiomassNorm * tFireNorm +
+                  ElevationNorm + SlopeNorm + (1 | Plot) + (1 | SampleYear),
+                family = nbinom2, data = sese)
+
+AIC(m1a)
+
+
+
+
+
+f <- obs(TotalBiomass ~ CwdHostBiomass + LideSnagBiomass + Elevation + Slope + tFire, family = "gamma") 
+
+sese_b <- sese |>
+  filter(TotalBiomass > 0 & LideSnagBiomass > 0)
+
+fit <- dynamite(dformula = f, data = sese_b, time = "SampleYear", group = "Plot", chains = 1, cores = 4, seed = 0)
+
+print(summary(fit))
 
 
 ```
