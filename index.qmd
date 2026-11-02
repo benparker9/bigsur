@@ -75,7 +75,7 @@ library(broom)
 library(broom.mixed)
 library(ggdag)
 library(BayesFactor)
-library(brms)
+
 
 ```
 
@@ -94,7 +94,6 @@ Assuming continuous variables must be normalized for path analysis, mixed effect
 box_cox <- function(dfCol){
   log1p(dfCol)
 }
-
 
 normal <- function(df, stat, metric_need = TRUE, metric = NULL, status = NULL) {
   
@@ -203,29 +202,22 @@ ggdag_paths(dag, text = FALSE, use_labels = "label", shadow = TRUE)
 - Only 160 plots with snag LIDE data    
 
 ```{r}
-snag_host <- q_sums |>
-  filter(Species == "LIDE" & Status == 1) |>
-  group_by(Plot, SampleYear) |>
-  mutate(LideSnagStemDensity = TotalStem,
-         LideSnagBiomass = TotalBiomass) |>
-  select(Plot, SampleYear, Status, LideSnagStemDensity, LideSnagBiomass)
+snag_host <- q_sums |> filter(Species == "LIDE" & Status == 1) |> group_by(Plot, SampleYear) |> mutate(LideSnagStemDensity = TotalStem, LideSnagBiomass = TotalBiomass) |> select(Plot, SampleYear, Status, LideSnagStemDensity, LideSnagBiomass) 
 
+snag_host$LideSnagBiomassNorm <- box_cox(snag_host$LideSnagBiomass) 
 
-snag_host$LideSnagBiomassNorm <- box_cox(snag_host$LideSnagBiomass)
-snag_host$LideSnagStemDensityNorm <- box_cox(snag_host$LideSnagBiomass)
+snag_host$LideSnagStemDensityNorm <- box_cox(snag_host$LideSnagBiomass) 
+snag_host <- snag_host |> select(Plot, SampleYear, LideSnagStemDensity, LideSnagBiomass, LideSnagBiomassNorm, LideSnagStemDensityNorm) 
 
-snag_host <- snag_host |> select(Plot, SampleYear, LideSnagStemDensity, LideSnagBiomass, LideSnagBiomassNorm, LideSnagStemDensityNorm)
-
-
-```
+``` 
 
 **Cwd host biomass**        
-- 94 plots with cwd host data    
-- See dataset cleaning page for how this data was obtained (summarizing total mass of individual stems of LIDE, QUAG)      
+ - 94 plots with cwd host data    
+- See dataset cleaning page for how this data was obtained (summarizing total mass of individual stems of LIDE, QUAG)     
 
-```{r}
-m <- load_meta() |> select(Plot, SampleYear, CWD_Host_Biomass) |>
-  select(Plot, SampleYear, CWD_Host_Biomass) |>
+
+```{r} 
+m <- load_meta() |> select(Plot, SampleYear, CWD_Host_Biomass) |> select(Plot, SampleYear, CWD_Host_Biomass) |>
   rename(CwdHostBiomass = CWD_Host_Biomass) |>
   distinct()
 
@@ -280,19 +272,18 @@ There are two final datasets --
 
 all_year <- left_join(q_sums, snag_host, by = c("Plot", "SampleYear"), relationship = "many-to-many")
 
-all_year <- left_join(all_year, umca, by = c("Plot", "SampleYear"), relationship = "many-to-many")
 
 all_year$TotalBiomassNorm = box_cox(all_year$TotalBiomass)
 
 all_year <- left_join(all_year, p, by = c("Plot", "SampleYear", "PRam", "Fire", "ForestType"))
 
-all_year <- left_join(all_year, lide_de, by = c("Plot", "SampleYear"))
 
 all_year$ElevationNorm <- box_cox(all_year$Elevation)
 all_year$SlopeNorm <- box_cox(all_year$Slope)
 all_year$tFireNorm <- box_cox(all_year$tFire)
 
-
+all_year <- left_join(all_year, umca, by = c("Plot", "SampleYear"), relationship = "many-to-many")
+all_year <- left_join(all_year, lide_de, by = c("Plot", "SampleYear"))
 
 
 
@@ -305,14 +296,14 @@ all_year$tFireNorm <- box_cox(all_year$tFire)
 **47 unique plots with redwood living biomass data, tanoak snag data and cwd data.**      
 
 ```{r}
-cwd_year <- left_join(m, all_year, by = c("Plot", "SampleYear")) 
+cwd_year <- left_join( all_year,m,  by = c("Plot", "SampleYear")) 
 
 cwd_year <- cwd_year |>
   mutate(DiseaseFuels = LideSnagBiomass + CwdHostBiomass,
          DiseaseFuelsNorm = LideSnagBiomassNorm + CwdHostBiomassNorm
 ) |>
   distinct() |>
-  filter(ForestType == 2 & Species == "SESE" & Status == 0) |>
+  filter(ForestType == 2 & Species == "SESE") |>
   mutate(Group = case_when(
                            PRam == 1 & Fire == 0 ~ "SOD",
                            PRam == 0 & Fire == 1 ~ "Fire",
@@ -331,7 +322,7 @@ cwd_year <- cwd_year |>
     TotalStem_chg    = TotalStem - TotalStem_lag,
     years_between    = SampleYear - Year_lag
   ) |>
-  ungroup()
+  ungroup() 
 
 
 
@@ -340,6 +331,87 @@ n <- cwd_year |>
   filter(is.na(cwd_year$Group))
 
 ```
+
+
+```{r}
+#plm models and usage
+red_a <- cwd_year |> filter(Status == 0)
+red_a <- pdata.frame(red_a, index = c("Plot", "SampleYear" ))
+
+red_d <- cwd_year |> filter(Status == 1)
+red_d <- pdata.frame(red_d, index = c("Plot", "SampleYear"))
+
+m1 <- plm(TotalBiomassNorm ~ tFireNorm * LideSnagBiomassNorm * CwdHostBiomassNorm, 
+	  data = red_a, model = "pooling")
+
+m1_r <- tidy(m1)
+m1_r$estimate_bio_t <- 100 * (exp(m1_r$estimate)- 1)
+
+m2 <- plm(TotalBiomassNorm ~ tFireNorm * LideSnagBiomassNorm * CwdHostBiomassNorm, 
+	  data = red_a, model = "within", effect = "twoways")
+
+m2_r <- tidy(m2)
+m2_r$estimate_bio_t <- 100 * (exp(m2_r$estimate)- 1)
+
+m3 <- plm(TotalBiomassNorm ~ Fire * PRam, 
+	  data = red_a, model = "within", effect = "twoways")
+
+m3_r <- tidy(m3)
+m3_r$estimate_bio_t <- 100 * (exp(m3_r$estimate)- 1)
+
+m4 <- plm(TotalBiomassNorm ~ tFireNorm * LideSnagBiomassNorm * CwdHostBiomassNorm, 
+	  data = red_a, model = "random", effect = "twoways", random.method = "amemiya")
+
+m4_r <- tidy(m4)
+m4_r$estimate_bio_t <- 100 * (exp(m4_r$estimate)- 1)
+
+
+print("Pooling model")
+print(m1_r)
+AIC(m1)
+
+print("Two-way within model - continuous variables")
+print(m2_r)
+AIC(m2)
+
+print("Two-way within model - binary variables")
+print(m3_r)
+AIC(m3)
+
+print("Two-way random model - continuous variables")
+print(m4_r)
+AIC(m4)
+
+m_stem <- plm(TotalStemNorm ~ tFireNorm * LideSnagBiomassNorm * CwdHostBiomassNorm, 
+	  data = red_a, model = "within", effect = "twoways")
+
+ms_r <- tidy(m_stem)
+ms_r$estimate_bio_t <- 100 * (exp(ms_r$estimate)- 1)
+
+print("Two-way within model - continuous variables")
+print(ms_r)
+AIC(m_stem)
+
+
+m_pois <- fepois(
+		 TotalStemNorm ~ tFireNorm * LideSnagBiomassNorm * CwdHostBiomassNorm |
+                   Plot + SampleYear,
+                 data = cwd_year, cluster = ~ Plot)
+
+m_dead <- plm(TotalBiomassNorm ~ tFireNorm * LideSnagBiomassNorm * CwdHostBiomassNorm, 
+	  data = red_d, model = "within", effect = "twoways")
+
+md_r <- tidy(m_dead)
+md_r$estimate_bio_t <- 100 * (exp(md_r$estimate)- 1)
+
+print("Two-way within model - continuous variables")
+print(md_r)
+AIC(m_dead)
+
+
+```
+
+
 
 ```{r}
 stem <- t |> 
