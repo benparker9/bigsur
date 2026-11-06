@@ -291,6 +291,63 @@ all_year <- left_join(all_year, lide_de, by = c("Plot", "SampleYear"))
 
 
 
+```{r}
+panel <- function(df, formula, model, effect){
+	
+	f<- as.formula(formula)
+	m <- plm(f, 
+	  data = df, model = model, effect = effect)
+
+	return(m)
+
+}
+
+
+
+
+red_a <- all_year |> filter(Status == 0 & Species == "SESE") |> distinct()
+
+red_mod <- pdata.frame(red_a, index = c("Plot", "SampleYear" ))
+
+
+r <- panel(red_a,TotalBiomassNorm ~ Fire * PRam + SlopeNorm + ElevationNorm,  "pooling", "twoways")
+
+AIC(r)
+
+r <- panel(red_a, TotalBiomassNorm ~ tFireNorm * LideSnagBiomassNorm + SlopeNorm + ElevationNorm,  "pooling", "twoways")
+
+AIC(r)
+
+r <- tidy(r)
+r$estimate_bio_t <- 100 * (exp(r$estimate)- 1)
+
+
+me <- lmer(TotalBiomassNorm ~ tFireNorm * LideSnagBiomassNorm + SlopeNorm + ElevationNorm + (1 | Plot) + (1 | SampleYear), data = red_a)
+
+AIC(me)
+
+
+stem <- t |> 
+  rename(status = Mortality) |>
+  mutate(status = case_when(
+                            status == 0 ~ 1,
+                            TRUE ~ 2),
+  t = SampleYear - 2005) |>
+  select(Plot, StemId, Species, SampleYear, DBH, status, t)
+
+s_m <- left_join(stem, p, by = c("Plot", "SampleYear"))
+
+re <- s_m |> filter(Species == "SESE")
+
+
+#survival analaysis
+exp_sa <- survreg(Surv(t, status) ~ DBH * Fire * PRam, data = re, dist = "weibull")
+
+print(summary(exp_sa)) 
+
+```
+
+
 2) Includes coarse woody debris:      
 
 **47 unique plots with redwood living biomass data, tanoak snag data and cwd data.**      
@@ -422,9 +479,25 @@ stem <- t |>
   t = SampleYear - 2005) |>
   select(Plot, StemId, Species, SampleYear, DBH, status, t)
 
+s_m <- left_join(stem, p, by = c("Plot", "SampleYear"))
+
+re <- s_m |> filter(Species == "SESE")
+
+
+#survival analaysis
+exp_sa <- survreg(Surv(t, status) ~ DBH * Fire * PRam, data = re, dist = "weibull")
+
+print(summary(exp_sa)) 
+
+
 all_a <- all_year |>
   ungroup() |>
   select(!c(Species, Status, TotalStem, TotalBiomass, TotalStemNorm, TotalBiomassNorm))
+
+
+
+
+
 
 cwd_a <- cwd_year |>
   ungroup() |>
